@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+captures/*.pcap
+captures/*.pcapng
+data/*.csv
+data/capture_manifest.jsonl
+data/ike_facts/
+data/findings/
+ml/model.pkl
+ml/eval_report.json
+reports/*
+!reports/.gitkeep
+SIH26160_Full_Pipeline_Spec.md

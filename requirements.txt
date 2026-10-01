@@ -1,0 +1,8 @@
+scapy
+pandas
+scikit-learn
+joblib
+PyYAML
+Jinja2
+streamlit
+pytest

@@ -1,0 +1,56 @@
+rules:
+  - id: weak_encryption
+    category: Cryptographic Strength
+    check_field: encryption_algorithm
+    bad_values: ["DES", "3DES", "DES-CBC", "NULL"]
+    severity: critical
+    score_penalty: 80
+    message: "Deprecated/weak encryption algorithm in use"
+
+  - id: short_key_aes
+    category: Cryptographic Strength
+    check_field: encryption_algorithm
+    bad_values: ["AES-CBC-128", "AES-GCM-128"]
+    severity: low
+    score_penalty: 5
+    message: "AES-128 in use; AES-256 preferred for long-term security margin"
+
+  - id: weak_dh_group
+    category: Key Exchange Security
+    check_field: dh_group
+    bad_values: ["MODP768", "MODP1024", "MODP1536"]
+    severity: high
+    score_penalty: 40
+    message: "Weak Diffie-Hellman group (<2048-bit equivalent) — vulnerable to precomputation attacks (Logjam-class)"
+
+  - id: pfs_disabled
+    category: Forward Secrecy
+    check_field: pfs_enabled
+    bad_values: [false]
+    severity: medium
+    score_penalty: 20
+    message: "Perfect Forward Secrecy not confirmed/enabled — past sessions may be compromised if long-term key is leaked"
+
+  - id: weak_integrity
+    category: Cryptographic Strength
+    check_field: integrity_algorithm
+    bad_values: ["HMAC-MD5", "HMAC-SHA1", "NULL"]
+    severity: medium
+    score_penalty: 15
+    message: "Weak or legacy integrity algorithm in use"
+
+  - id: no_auth_detected
+    category: Session Management
+    check_field: ike_sa_established
+    bad_values: [false]
+    severity: critical
+    score_penalty: 100
+    message: "IKE SA failed to establish — tunnel not functional / auth failure"
+
+  - id: long_sa_lifetime
+    category: Session Management
+    check_field: sa_lifetime_seconds
+    bad_values: null
+    severity: low
+    score_penalty: 5
+    message: "SA lifetime excessively long or undeclared — increases exposure window if key compromised"

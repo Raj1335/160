@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPsec Analysis — {{ label }}</title>
+  <style>
+    :root { color-scheme: light; --ink: #182230; --muted: #526174; --line: #d6dee8; --panel: #f4f7fb; }
+    body { margin: 0 auto; max-width: 1050px; padding: 2rem; color: var(--ink); font: 16px/1.55 system-ui, sans-serif; }
+    h1, h2 { line-height: 1.2; } h2 { margin-top: 2rem; border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+    .score { display: inline-block; padding: .7rem 1.3rem; border-radius: .75rem; color: white; font-size: 2.5rem; font-weight: 750; }
+    .red { background: #a62b2b; } .yellow { background: #916400; } .green { background: #187346; }
+    .banner { padding: 1rem; border-left: 5px solid #b47700; background: #fff6d9; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid var(--line); padding: .55rem .7rem; text-align: left; overflow-wrap: anywhere; }
+    th { background: var(--panel); } .critical { background: #fde9e7; } .high { background: #fff0df; }
+    .medium { background: #fff8d9; } .low { background: #edf4ff; }
+    code, pre { white-space: pre-wrap; overflow-wrap: anywhere; } footer { margin-top: 2rem; color: var(--muted); font-size: .9rem; }
+    @media print { body { max-width: none; padding: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <p>IPsec configuration and traffic analysis</p>
+    <h1>{{ label }}</h1>
+    <p>Analyzed {{ analyzed_at }}</p>
+    <div class="score {{ score_color }}">{{ score_result.risk_score }}<small> / 100</small></div>
+    <p>Higher scores indicate fewer triggered findings; this is a prototype rule score, not a risk probability.</p>
+  </header>
+  <section>
+    <h2>Executive Summary</h2>
+    {% for sentence in executive_summary %}<p>{{ sentence }}</p>{% endfor %}
+  </section>
+  <section>
+    <h2>Threat Matrix</h2>
+    {% if score_result.threat_matrix %}
+    <table>
+      <thead><tr><th>Category</th><th>Severity</th><th>Description</th></tr></thead>
+      <tbody>{% for finding in score_result.threat_matrix %}
+      <tr class="{{ finding.severity }}"><td>{{ finding.category }}</td><td>{{ finding.severity|upper }}</td><td>{{ finding.description }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% else %}<p>No configured security rules were triggered by observed values. Unknown fields are not treated as confirmed-safe.</p>{% endif %}
+  </section>
+  <section>
+    <h2>Technical Detail</h2>
+    <table><thead><tr><th>Field</th><th>Observed value</th></tr></thead><tbody>
+      {% for name, value in ike_facts.items() %}
+      <tr><th>{{ name|replace("_", " ")|title }}</th><td><code>{{ value if value is not none else "Unknown / not observable" }}</code></td></tr>
+      {% endfor %}
+    </tbody></table>
+  </section>
+  <section>
+    <h2>Traffic Classification</h2>
+    {% if classifier_training.status == "insufficient_data" %}
+      <p class="banner"><strong>Classifier not yet validated — insufficient training data.</strong> {{ classifier_training.note }}</p>
+    {% else %}
+      <p>{{ classifier_training.note }}</p>
+      <p>Cross-validation accuracy: {{ "%.3f"|format(classifier_training.cv_accuracy_mean) }}; majority baseline: {{ "%.3f"|format(classifier_training.baseline_majority_accuracy) }}.</p>
+    {% endif %}
+    <p>Flow prediction: {{ classifier_result.predicted_label if classifier_result.predicted_label else "Not available" }}</p>
+    <h3>AI Confidence Score</h3>
+    {% if classifier_result.confidence is not none %}
+      <p>{{ "%.1f"|format(classifier_result.confidence * 100) }}%</p>
+    {% else %}
+      <p>N/A — {{ classifier_result.note }}</p>
+    {% endif %}
+  </section>
+  <footer>
+    <p>Compliance reference basis: NIST SP 800-77 Rev. 1 and RFC 8221. This is a prototype/lab analysis, not a production security audit. Packet captures reveal only observable metadata; encrypted IKE payloads are not decrypted.</p>
+  </footer>
+</body>
+</html>
