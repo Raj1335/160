@@ -31,6 +31,19 @@ collection is documented below.
 Results from that controlled lab do not by themselves establish performance on
 independent production VPNs.
 
+## What it does not do
+
+- It does not decrypt IKE_AUTH, encrypted CREATE_CHILD_SA payloads, IKEv1 Quick
+  Mode, or ESP data.
+- It does not infer configured PFS from ESP traffic. PFS can be observed from a
+  parseable CREATE_CHILD_SA key-exchange payload; otherwise it remains unknown
+  unless a sourced sidecar supplies the configured value.
+- It does not claim validated classifier accuracy without a committed
+  `ml/eval_report.json` backed by sufficient independent captures. No trained
+  model or evaluation report is currently bundled.
+- It does not treat profile metadata or synthetic captures as packet-derived
+  evidence or as training data.
+
 Three compact, hash-bound fixtures derived from a genuine strongSwan testbed run
 are included in [`captures/fixtures/`](./captures/fixtures/). Each has a
 manifest record with the SHA-256 of the bundled PCAP and a sidecar documenting
@@ -147,6 +160,29 @@ manifest. The attestation flag is an explicit human responsibility, not an
 automated authenticity guarantee. Only register captures that are genuinely
 captured, correctly labeled, and authorized for this use.
 
+### Training and evaluation
+
+After collecting enough independently captured, labeled traffic, rebuild the
+feature dataset and train offline:
+
+```powershell
+python -m features.esp_features
+python -m ml.train_classifier
+```
+
+Read `ml/eval_report.json` before using a model. `status` must be `trained`;
+`cv_accuracy_mean` is capture-grouped cross-validation (both directions of a
+capture stay in one fold), and `per_class` and `confusion_matrix` show where
+errors occur. `leave_one_profile_out.mean_accuracy` measures generalization to
+profiles withheld entirely from training; it is unavailable until there are
+enough captures across multiple profiles. `baseline_majority_accuracy` is a
+simple reference, not a quality threshold. If the report says
+`insufficient_data`, no accuracy result or validated model is available.
+
+The bundled fixtures currently contain only one independent capture per
+traffic class, so they do not satisfy the training minimum. Analyze captures
+without retraining; training is always an explicit offline command.
+
 ### Public IPsec research data considered
 
 The public [IPSec-VPN-Classification repository](https://github.com/vverky/IPSec-VPN-Classification)
@@ -171,6 +207,14 @@ python pipeline.py captures\demo_aesgcm256_pfs-on_ipv4_synthetic.pcap
 
 **This fixture is synthetic and is never accepted by the real-data training
 path.**
+
+## Pitch and demo materials
+
+- [Technical brief](./docs/TECHNICAL_BRIEF.md) summarizes the problem, system,
+  evidence, and open validation work.
+- [Demo script](./docs/DEMO_SCRIPT.md) distinguishes the reproducible bundled
+  capture walkthrough from profile-configuration scoring. A real weak-profile
+  PCAP demo still requires Linux/XFRM collection.
 
 ## Run tests
 

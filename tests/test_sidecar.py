@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from ipsec_parser.ike_parser import parse_ike
+from scoring.scorer import score_capture
 from tools.generate_demo_capture import generate_demo_capture
 
 
@@ -59,3 +60,21 @@ def test_sidecar_without_source_is_ignored(tmp_path):
 
     assert facts["pfs_enabled"] is None
     assert any("non-empty source is required" in warning for warning in facts["parse_warnings"])
+
+
+def test_sourced_pfs_sidecar_turns_unknown_into_observed_failure(tmp_path):
+    capture = generate_demo_capture(tmp_path / "pfs_override.pcap")
+    Path(f"{capture}.json").write_text(
+        json.dumps({"source": "documented lab configuration", "pfs": False}),
+        encoding="utf-8",
+    )
+
+    facts = parse_ike(str(capture))
+    result = score_capture(facts)
+
+    pfs_rule = next(
+        rule for rule in result["rule_results"] if rule["id"] == "pfs_disabled"
+    )
+    assert pfs_rule["status"] == "FAIL"
+    assert pfs_rule["observed_value"] is False
+    assert pfs_rule["source"] == "sidecar: documented lab configuration"
