@@ -81,8 +81,9 @@ def test_scorer_applies_hard_cap_for_weak_encryption():
             "sa_lifetime_seconds": 3600,
         }
     )
-    assert result["risk_score"] == 20
-    assert result["findings"][0]["id"] == "weak_encryption"
+    assert result["security_score"] == 20
+    assert result["grade"] == "F"
+    assert any(finding["id"] == "encryption_des" for finding in result["findings"])
 
 
 def test_unknown_sa_lifetime_is_not_scored_as_a_finding():
@@ -90,6 +91,31 @@ def test_unknown_sa_lifetime_is_not_scored_as_a_finding():
 
     assert result["security_score"] == 100
     assert not any(finding["id"] == "long_sa_lifetime" for finding in result["findings"])
+
+
+def test_scorer_coverage_counts_observed_and_unknown_rules_without_penalty():
+    result = score_capture(
+        {
+            "encryption_algorithm": "AES-GCM-256",
+            "integrity_algorithm": "N/A (combined with AEAD)",
+            "dh_group": None,
+            "pfs_enabled": None,
+            "ike_sa_established": True,
+            "sa_lifetime_seconds": None,
+        }
+    )
+
+    coverage = result["coverage"]
+    assert coverage["total"] == 7
+    assert coverage["observed"] + coverage["not_observable"] == coverage["total"]
+    assert coverage["pass"] + coverage["fail"] == coverage["observed"]
+    assert coverage["not_observable"] > 0
+    assert result["security_score"] == 100
+    assert all(
+        rule["status"] == "NOT OBSERVABLE"
+        for rule in result["rule_results"]
+        if rule["observed_value"] is None
+    )
 
 
 def test_observed_sa_lifetime_over_24_hours_is_scored():

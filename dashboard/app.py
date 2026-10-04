@@ -20,8 +20,10 @@ CAPTURES_DIR = ROOT / "captures"
 
 def _show_results(result: dict) -> None:
     st.subheader(f"Analysis: {result['label']}")
-    score = result["score_result"]["risk_score"]
+    score = result["score_result"].get("security_score", result["score_result"].get("risk_score", 100))
+    grade = result["score_result"].get("grade", "F")
     st.metric("Security score (higher is better)", f"{score} / 100")
+    st.caption(f"Grade: {grade}")
     st.dataframe(result["score_result"]["threat_matrix"], use_container_width=True)
     with st.expander("Raw IKE facts"):
         st.json(result["ike_facts"])

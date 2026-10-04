@@ -26,7 +26,8 @@ def generate_report(
         output_path = ROOT / output_path
     output_path.mkdir(parents=True, exist_ok=True)
 
-    score = score_result["risk_score"]
+    score = score_result.get("security_score", score_result.get("risk_score", 100))
+    grade = score_result.get("grade", "F")
     score_color = "red" if score < 40 else "yellow" if score <= 70 else "green"
     encryption = ike_facts.get("encryption_algorithm") or "an unknown encryption algorithm"
     dh_group = ike_facts.get("dh_group") or "an unknown key-exchange group"
@@ -43,7 +44,7 @@ def generate_report(
     summary = [
         f"This capture reports {encryption} and {dh_group}; unavailable facts remain unknown rather than inferred.",
         f"{concerns}{f', including {critical}' if critical else ''}.",
-        f"The resulting prototype security score is {score}/100.",
+        f"The resulting prototype security score is {score}/100 (grade {grade}).",
         "Encrypted IKE payloads were not decrypted; review the technical details and capture limitations before drawing conclusions.",
     ]
     environment = Environment(

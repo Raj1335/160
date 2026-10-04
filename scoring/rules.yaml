@@ -1,5 +1,5 @@
 rules:
-  - id: weak_encryption
+  - id: encryption_des
     category: Cryptographic Strength
     check_field: encryption_algorithm
     bad_values: ["DES", "3DES", "DES-CBC", "NULL"]

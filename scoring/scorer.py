@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from scoring.policy import grade_for_score, score_caps
+
 
 ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_RULES = ROOT / "scoring" / "rules.yaml"
@@ -29,7 +31,8 @@ def score_capture(
 
     score = 100
     findings = []
-    hard_cap = False
+    rule_results = []
+    triggered_rule_ids = []
     for rule in rules:
         if not isinstance(rule, dict):
             raise ValueError("Every scoring rule must be a mapping")
@@ -39,6 +42,7 @@ def score_capture(
             raise ValueError("Every scoring rule needs string id and check_field")
         value = ike_facts.get(field)
         is_triggered = False
+        status = "NOT OBSERVABLE" if value is None else "PASS"
         if value is not None:
             bad_values = rule.get("bad_values") or []
             is_triggered = any(
@@ -60,12 +64,28 @@ def score_capture(
                     and value > threshold
                 )
         if not is_triggered:
+            rule_results.append(
+                {
+                    "id": rule_id,
+                    "field": field,
+                    "status": status,
+                    "observed_value": value,
+                }
+            )
             continue
         penalty = rule.get("score_penalty")
         if not isinstance(penalty, int) or penalty < 0:
             raise ValueError(f"Invalid score_penalty in scoring rule {rule_id}")
         score -= penalty
-        hard_cap = hard_cap or rule_id in {"weak_encryption", "no_auth_detected"}
+        triggered_rule_ids.append(rule_id)
+        rule_results.append(
+            {
+                "id": rule_id,
+                "field": field,
+                "status": "FAIL",
+                "observed_value": value,
+            }
+        )
         findings.append(
             {
                 "id": rule_id,
@@ -76,9 +96,7 @@ def score_capture(
                 "category": rule.get("category", "Session Management"),
             }
         )
-    score = max(0, score)
-    if hard_cap:
-        score = min(score, 20)
+    score = score_caps(max(0, score), triggered_rule_ids)
     threat_matrix = [
         {
             "category": finding["category"],
@@ -88,9 +106,24 @@ def score_capture(
         for finding in findings
     ]
     security_score = score
+    grade = grade_for_score(security_score)
+    coverage = {
+        "total": len(rule_results),
+        "observed": sum(
+            result["status"] != "NOT OBSERVABLE" for result in rule_results
+        ),
+        "not_observable": sum(
+            result["status"] == "NOT OBSERVABLE" for result in rule_results
+        ),
+        "pass": sum(result["status"] == "PASS" for result in rule_results),
+        "fail": sum(result["status"] == "FAIL" for result in rule_results),
+    }
     return {
         "security_score": security_score,
         "risk_score": security_score,
+        "grade": grade,
         "findings": findings,
         "threat_matrix": threat_matrix,
+        "rule_results": rule_results,
+        "coverage": coverage,
     }

@@ -24,8 +24,8 @@
     <p>IPsec configuration and traffic analysis</p>
     <h1>{{ label }}</h1>
     <p>Analyzed {{ analyzed_at }}</p>
-    <div class="score {{ score_color }}">{{ score_result.risk_score }}<small> / 100</small></div>
-    <p>Higher scores indicate fewer triggered findings; this is a prototype rule score, not a risk probability.</p>
+    <div class="score {{ score_color }}">{{ score_result.security_score if score_result.security_score is defined else score_result.risk_score }}<small> / 100</small></div>
+    <p>Grade: <strong>{{ score_result.grade if score_result.grade is defined else 'F' }}</strong> · Higher scores indicate fewer triggered findings; this is a prototype rule score, not a risk probability.</p>
   </header>
   <section>
     <h2>Executive Summary</h2>
@@ -42,6 +42,18 @@
     </table>
     {% else %}<p>No configured security rules were triggered by observed values. Unknown fields are not treated as confirmed-safe.</p>{% endif %}
   </section>
+  {% if score_result.coverage is defined %}
+  <section>
+    <h2>Scoring Coverage</h2>
+    <p>{{ score_result.coverage.observed }} of {{ score_result.coverage.total }} configured rules had observable inputs;
+      {{ score_result.coverage.not_observable }} were not observable.</p>
+    <table><thead><tr><th>Rule</th><th>Field</th><th>Status</th><th>Observed value</th></tr></thead><tbody>
+      {% for rule in score_result.rule_results %}
+      <tr><td>{{ rule.id }}</td><td>{{ rule.field }}</td><td>{{ rule.status }}</td><td><code>{{ rule.observed_value if rule.observed_value is not none else "Unknown / not observable" }}</code></td></tr>
+      {% endfor %}
+    </tbody></table>
+  </section>
+  {% endif %}
   <section>
     <h2>Technical Detail</h2>
     <table><thead><tr><th>Field</th><th>Observed value</th></tr></thead><tbody>
