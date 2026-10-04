@@ -4,10 +4,12 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
-    healthCheckPath: /_stcore/health
+    startCommand: uvicorn webapp:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: IPSEC_ANALYZER_PDF
+        value: "0"

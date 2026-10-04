@@ -35,3 +35,18 @@ jobs:
           python -m tools.generate_demo_capture --output captures/demo_ci_synthetic.pcap
           python -m pipeline captures/demo_ci_synthetic.pcap --fail-under 0
           python -c "from pathlib import Path; assert list(Path('reports').glob('report_demo_ci_synthetic-*.pdf'))"
+      - name: Live web app smoke test
+        run: |
+          IPSEC_ANALYZER_PDF=0 uvicorn webapp:app --host 127.0.0.1 --port 8000 &
+          server_pid=$!
+          trap 'kill "$server_pid"; wait "$server_pid" || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/healthz >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/ | grep -q "See what your"
+          curl --fail --silent -X POST \
+            http://127.0.0.1:8000/api/demo/ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_icmp-run01.pcap \
+            | python -c "import json,sys; result=json.load(sys.stdin); assert result['security_score']==100 and result['grade']=='A'; print('Live web analysis returned grade A')"

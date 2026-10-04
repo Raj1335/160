@@ -3,7 +3,7 @@
 An end-to-end, local-first system for inspecting IKEv1/IKEv2/IPsec packet captures:
 streaming PCAP parsing, ESP flow extraction, capture-aware traffic
 classification, deterministic security findings, combined HTML reports, and a
-Streamlit web app. The analyzer never decrypts IKE or ESP traffic. Missing or
+custom FastAPI-powered web interface. The analyzer never decrypts IKE or ESP traffic. Missing or
 encrypted facts stay unknown.
 
 ## What it does
@@ -22,7 +22,7 @@ encrypted facts stay unknown.
    Training is an explicit offline action (`python -m ml.train_classifier`);
    analyzing a capture never retrains or changes the model.
 5. Applies YAML-based rules and writes JSON findings and a combined HTML report.
-6. Presents the same pipeline in a local or hosted Streamlit app.
+6. Presents The same pipeline in a local or hosted web app.
 
 The score is a prototype rule score, not a calibrated probability or production
 security audit. No full training captures or trained model are bundled;
@@ -62,11 +62,12 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
-python -m streamlit run dashboard\app.py
+python -m uvicorn webapp:app --reload
 ```
 
-The web app lets you analyze a PCAP from `captures\` or upload one. To run the
-same end-to-end analysis from the command line:
+Open `http://127.0.0.1:8000`. The custom browser app offers bundled demo
+captures and bounded PCAP/PCAPNG uploads. To run the same end-to-end analysis
+from the command line:
 
 ```powershell
 python pipeline.py captures\your_capture.pcap
@@ -223,43 +224,20 @@ python -m pytest -q --cov
 
 ## Deploy the web app for free
 
-The browser UI is a Streamlit frontend backed by the Python analysis pipeline.
-For this Streamlit project, **Streamlit Community Cloud** is the recommended
-free first deployment:
+The app is a custom-designed browser frontend backed by a FastAPI Python
+service. It is configured for **Render's free web service**. In Render, create
+a Blueprint from this repository; [`render.yaml`](./render.yaml) defines the
+build, Uvicorn server, health check, and PDF-disabled demo configuration. The
+[deployment guide](./docs/DEPLOYMENT.md) has setup, verification, and judge-day
+instructions.
 
-1. Open [share.streamlit.io](https://share.streamlit.io) and sign in with
-   GitHub.
-2. Select **Create app → Yup, I have an app**.
-3. Choose repository `Raj1335/160`, branch `main`, and main file path
-   `dashboard/app.py`.
-4. In **Advanced settings**, choose Python 3.11, then deploy.
-5. Open the app URL once the build finishes, choose the bundled
-   `ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_icmp-run01.pcap`, and click
-   **Analyze capture** to confirm reports download.
-
-Streamlit Cloud reads the pinned dependencies from the repository's root
-`requirements.txt`. The first screen defers analysis and heavy pipeline imports
-until the judge clicks the button; the bundled testbed fixtures are available
-without uploading a file. See the [deployment and demo checklist](./docs/DEPLOYMENT.md)
-for a final pre-event warm-up/check routine.
-
-**Free hosting cannot guarantee an always-warm instance or a zero cold start.**
-Streamlit documents that [Community Cloud apps without traffic for 12 hours go
-to sleep](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app#developer-view);
-a visitor can wake one from its sleeping page. Builds usually take a few
-minutes, and shared-host limits can change. Deploy and test the public URL ahead
-of time, then open it and run the demo shortly before judging. If judges must
-always get an instant response after long inactivity, no free shared-host
-option can reliably promise that; use a paid always-on instance or bring a
-locally hosted demo as a fallback.
-
-The included [`render.yaml`](./render.yaml) is an alternative free Render
-deployment, not the preferred judge-day host: Render documents that its free
-web services spin down after 15 minutes without inbound traffic and usually
-need about a minute to spin up on the next request. Either free host has an
-ephemeral filesystem. Uploads, generated reports, and runtime-trained models
-are temporary; do not store confidential captures or rely on runtime training.
-The repository intentionally ships no trained model.
+Render's free service spins down after 15 minutes without inbound requests and
+typically needs about a minute to wake. Therefore a free service cannot promise
+an instant first response after judges arrive. Deploy and exercise the public
+site before the event, open it shortly before judging, and keep a tested local
+server ready. If instant availability at any time is mandatory, an always-on
+paid server is required. Render's ephemeral filesystem also means uploaded
+captures and generated reports are temporary; do not upload confidential data.
 
 ## Limitations
 
@@ -304,7 +282,7 @@ that encrypted negotiation payloads were decrypted.
 ## Repository layout
 
 ```text
-dashboard/       Streamlit UI
+dashboard/       Custom web frontend templates and static assets
 captures/fixtures/ compact SHA-256-bound real capture fixtures and sidecars
 features/        Streaming ESP flow features
 ipsec_parser/    IKE parsing and sidecar validation
@@ -314,6 +292,8 @@ scoring/          YAML findings policy and score/grade helpers
 testbed/profiles/ six strongSwan profile configurations
 tests/            Parser, scoring, provenance, and pipeline tests
 tools/            Collection and fixture utilities
+webapp.py         FastAPI web routes, upload validation, and analysis API
+docs/             Deployment checklist, technical brief, and demo script
 ```
 
 ## License

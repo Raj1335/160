@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1120">
+    <meta name="description" content="Evidence-led IPsec packet capture analysis. See observable IKE facts, security findings, and coverage without decrypting traffic.">
+    <title>Sentinel / IPsec Analyzer</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Sentinel home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M16 3.5 27 8v7.2c0 7-4.7 11.8-11 14.3C9.7 27 5 22.2 5 15.2V8l11-4.5Z" stroke="currentColor" stroke-width="1.7"/><path d="m11.4 16.1 3 3 6.6-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-name">sentinel<span>/</span>ipsec</span>
+      </a>
+      <nav class="top-nav" aria-label="Main navigation">
+        <a class="nav-active" href="#analyzer">Analyzer</a>
+        <a href="#methodology">Methodology</a>
+        <a href="https://github.com/Raj1335/160" target="_blank" rel="noreferrer">Source <span aria-hidden="true">↗</span></a>
+      </nav>
+      <div class="status-pill"><span class="status-dot"></span> ANALYSIS ENGINE READY</div>
+    </header>
+
+    <main id="analyzer">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> NETWORK SECURITY / IPSEC TELEMETRY</div>
+          <h1>See what your<br>tunnel <span class="title-accent">reveals.</span></h1>
+          <p class="hero-lede">Inspect observable IKE negotiation facts, surface cryptographic weaknesses, and map rule coverage — without decrypting a single packet.</p>
+          <div class="hero-proof">
+            <span><span class="proof-icon">01</span> Evidence, not assumptions</span>
+            <span><span class="proof-icon">02</span> Unknown stays unknown</span>
+          </div>
+        </div>
+        <div class="hero-graphic" aria-hidden="true">
+          <div class="orbit orbit-outer"></div>
+          <div class="orbit orbit-middle"></div>
+          <div class="orbit orbit-inner"></div>
+          <div class="orbit-node node-a"></div>
+          <div class="orbit-node node-b"></div>
+          <div class="orbit-node node-c"></div>
+          <div class="core-shield">
+            <svg viewBox="0 0 72 84" fill="none"><path d="M36 4 65 15v20c0 19-12.4 32.2-29 41C19.4 67.2 7 54 7 35V15L36 4Z" stroke="currentColor" stroke-width="1.5"/><path d="M26 40h20M36 30v20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="36" cy="40" r="19" stroke="currentColor" stroke-width="1" opacity=".36"/></svg>
+          </div>
+          <div class="graphic-label label-top">IKE / ESP</div>
+          <div class="graphic-label label-bottom">PASSIVE INSPECTION</div>
+        </div>
+      </section>
+
+      <section class="workspace" aria-labelledby="workspace-title">
+        <div class="workspace-heading">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-line"></span> CAPTURE WORKSPACE</div>
+            <h2 id="workspace-title">Start an analysis</h2>
+          </div>
+          <div class="privacy-note"><span class="lock-icon" aria-hidden="true">⌑</span> Files are analyzed in temporary storage</div>
+        </div>
+        <div class="workspace-grid">
+          <section class="panel source-panel">
+            <div class="panel-heading">
+              <span class="step-number">01</span>
+              <div><h3>Choose your evidence</h3><p>Use a verified demo capture or bring a PCAP.</p></div>
+            </div>
+            <div class="source-tabs" role="tablist" aria-label="Capture source">
+              <button class="source-tab active" id="tab-demo" type="button" role="tab" aria-selected="true" aria-controls="panel-demo">Demo capture</button>
+              <button class="source-tab" id="tab-upload" type="button" role="tab" aria-selected="false" aria-controls="panel-upload">Upload PCAP</button>
+            </div>
+            <div class="source-content" id="panel-demo" role="tabpanel" aria-labelledby="tab-demo">
+              <label class="field-label" for="demo-select">BUNDLED TESTBED CAPTURE</label>
+              <div class="select-wrap">
+                <select id="demo-select" aria-label="Select a bundled testbed capture">
+                  <option value="">Loading verified captures…</option>
+                </select>
+                <span class="select-chevron" aria-hidden="true">⌄</span>
+              </div>
+              <div class="capture-meta" id="demo-meta"><span class="meta-dot"></span><span>SHA-256-bound · strongSwan testbed</span></div>
+            </div>
+            <div class="source-content hidden" id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
+              <label class="field-label" for="capture-file">YOUR CAPTURE <span>PCAP / PCAPNG · MAX {{ max_upload_mb }} MB</span></label>
+              <label class="drop-zone" id="drop-zone" for="capture-file">
+                <input id="capture-file" type="file" accept=".pcap,.pcapng,application/vnd.tcpdump.pcap,application/x-pcapng">
+                <span class="upload-icon" aria-hidden="true">↑</span>
+                <span class="drop-title" id="drop-title">Drop a capture here or <b>browse files</b></span>
+                <span class="drop-subtitle" id="drop-subtitle">PCAP and PCAPNG files · up to {{ max_upload_mb }} MB</span>
+              </label>
+              <div class="capture-meta"><span class="meta-dot"></span><span>Upload is processed in temporary storage</span></div>
+            </div>
+            <div class="panel-divider"></div>
+            <div class="action-row">
+              <div class="action-hint"><span class="key-icon">↳</span> Analysis takes a few seconds</div>
+              <button id="analyze-button" class="analyze-button" type="button" disabled>
+                <span>Analyze capture</span><span class="button-arrow" aria-hidden="true">↗</span>
+              </button>
+            </div>
+            <div id="error-message" class="error-message hidden" role="alert"></div>
+          </section>
+
+          <aside class="panel method-panel" id="methodology">
+            <div class="panel-heading method-heading">
+              <span class="step-number">02</span>
+              <div><h3>Evidence boundaries</h3><p>Designed to be explicit about what packets can prove.</p></div>
+            </div>
+            <div class="method-list">
+              <div class="method-item"><span class="method-symbol observable">✓</span><div><strong>Observable</strong><p>Cleartext IKE exchanges, ESP timing, sizes, endpoints.</p></div></div>
+              <div class="method-item"><span class="method-symbol sourced">↗</span><div><strong>Sourced context</strong><p>Sidecar configuration is labeled separately from packet facts.</p></div></div>
+              <div class="method-item"><span class="method-symbol unknown">?</span><div><strong>Not observable</strong><p>Encrypted payload details remain unknown — never guessed.</p></div></div>
+            </div>
+            <div class="method-footer"><span class="pulse-ring"></span> PASSIVE ANALYSIS <span class="footer-separator">/</span> NO DECRYPTION</div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="loading-state" class="loading-state hidden" aria-live="polite">
+        <div class="loader"></div>
+        <div><strong>Reading the capture</strong><span>Parsing IKE exchanges and extracting ESP flow features…</span></div>
+      </section>
+
+      <section id="results" class="results hidden" aria-live="polite">
+        <div class="results-heading">
+          <div><div class="eyebrow"><span class="eyebrow-line"></span> ANALYSIS COMPLETE</div><h2 id="result-title">Capture results</h2></div>
+          <button id="download-report" class="secondary-button" type="button"><span aria-hidden="true">↓</span> Download technical report</button>
+        </div>
+        <div class="results-grid">
+          <article class="panel score-panel">
+            <div class="result-label">SECURITY POSTURE <span id="grade-badge" class="grade-badge">A</span></div>
+            <div class="score-line"><span id="score-value" class="score-value">—</span><span class="score-denom">/ 100</span></div>
+            <div class="score-track"><span id="score-fill"></span></div>
+            <p class="score-caption">Prototype rule score · not a probability or certification</p>
+            <div class="score-divider"></div>
+            <div class="coverage-heading"><span>RULE COVERAGE</span><strong id="coverage-value">—</strong></div>
+            <div id="coverage-segments" class="coverage-segments"></div>
+            <div id="coverage-legend" class="coverage-legend"></div>
+          </article>
+          <article class="panel findings-panel">
+            <div class="result-label">SECURITY FINDINGS <span id="finding-count" class="count-badge">0</span></div>
+            <div id="findings-list" class="findings-list"></div>
+          </article>
+        </div>
+        <div class="panel details-panel">
+          <div class="details-top"><div><div class="result-label">OBSERVED NEGOTIATION</div><h3>Protocol facts</h3></div><span id="ike-version" class="protocol-badge">IKE —</span></div>
+          <div id="facts-grid" class="facts-grid"></div>
+          <div id="warnings-box" class="warnings-box hidden"></div>
+        </div>
+        <div class="results-footnote"><span class="footnote-mark">i</span><span>Interpret findings in context. Encrypted IKE_AUTH and ESP payloads are not decrypted; unknown inputs are excluded from the score and shown in coverage.</span></div>
+      </section>
+    </main>
+    <footer class="site-footer"><a class="brand footer-brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span class="brand-name">sentinel<span>/</span>ipsec</span></a><span>OPEN-SOURCE RESEARCH PROTOTYPE <i></i> IPSEC VISIBILITY TOOLKIT</span><a href="https://github.com/Raj1335/160" target="_blank" rel="noreferrer">VIEW PROJECT ↗</a></footer>
+    <noscript><div class="noscript">Enable JavaScript to analyze captures with the interactive interface.</div></noscript>
+  </body>
+</html>
