@@ -14,7 +14,6 @@ from features.esp_features import build_feature_dataset
 from ml.train_classifier import train_and_evaluate
 from pipeline import ROOT, analyze
 
-
 CAPTURES_DIR = ROOT / "captures"
 
 

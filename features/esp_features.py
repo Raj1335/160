@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from scapy.all import IP, IPv6, UDP, PcapReader
-
+from scapy.all import IP, UDP, IPv6, PcapReader
 
 ROOT = Path(__file__).resolve().parents[1]
 FEATURE_COLUMNS = [
@@ -212,6 +211,11 @@ def extract_flow_features(pcap_path: str, label: str) -> pd.DataFrame:
 
 def build_feature_dataset(captures_dir: Path, output_path: Path) -> pd.DataFrame:
     """Rebuild the aggregate CSV and attach only hash-verified capture provenance."""
+    from features.window_features import (
+        WINDOW_FEATURE_COLUMNS,
+        extract_window_features,
+    )
+
     manifest_path = output_path.parent / "capture_manifest.jsonl"
     manifest: dict[str, dict[str, Any]] = {}
     if manifest_path.is_file():
@@ -235,7 +239,7 @@ def build_feature_dataset(captures_dir: Path, output_path: Path) -> pd.DataFrame
 
     frames = []
     for path in sorted(captures_dir.glob("*.pcap")):
-        frame = extract_flow_features(str(path), path.name)
+        frame = extract_window_features(str(path), path.name)
         if frame.empty:
             continue
         digest = frame["capture_sha256"].iloc[0]
@@ -255,7 +259,11 @@ def build_feature_dataset(captures_dir: Path, output_path: Path) -> pd.DataFrame
             frame["profile"] = entry.get("profile")
             frame["is_real_capture"] = True
         frames.append(frame)
-    dataset = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FEATURE_COLUMNS)
+    dataset = (
+        pd.concat(frames, ignore_index=True)
+        if frames
+        else pd.DataFrame(columns=WINDOW_FEATURE_COLUMNS)
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     dataset.to_csv(output_path, index=False)
     return dataset

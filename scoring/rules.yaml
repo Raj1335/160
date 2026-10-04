@@ -50,7 +50,7 @@ rules:
   - id: weak_integrity
     category: Cryptographic Strength
     check_field: integrity_algorithm
-    bad_values: ["HMAC-MD5", "HMAC-SHA1", "NULL"]
+    bad_values: ["HMAC-MD5", "HMAC-MD5-96", "HMAC-SHA1", "HMAC-SHA1-96", "NULL"]
     severity: medium
     score_penalty: 15
     message: "Weak or legacy integrity algorithm in use"

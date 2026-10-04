@@ -16,8 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from features.esp_features import extract_flow_features
-from parser.ike_parser import parse_ike
-
+from ipsec_parser.ike_parser import parse_ike
 
 CAPTURES_DIR = ROOT / "captures"
 MANIFEST_PATH = ROOT / "data" / "capture_manifest.jsonl"

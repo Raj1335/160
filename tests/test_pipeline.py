@@ -1,31 +1,31 @@
 from __future__ import annotations
 
-import struct
 import hashlib
 import json
-from pathlib import Path
+import struct
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 import sklearn
+from scapy.all import IP, UDP, Ether, wrpcap
 
+import ml.train_classifier as classifier
+import pipeline
 from features.esp_features import (
     FEATURE_COLUMNS,
     build_feature_dataset,
     extract_flow_features,
 )
+from ipsec_parser.ike_parser import parse_ike
 from ml.train_classifier import predict_traffic_type, train_and_evaluate
-import ml.train_classifier as classifier
-import pipeline
-from parser.ike_parser import parse_ike
 from report.export_pdf import export_pdf
 from report.generate_report import generate_report
 from scoring.scorer import score_capture
 from tools.generate_demo_capture import generate_demo_capture
 from tools.register_capture import register_capture
-from scapy.all import Ether, IP, UDP, wrpcap
 
 
 def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
@@ -37,6 +37,11 @@ def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
         classifier, "EVAL_REPORT_PATH", tmp_path / "ml" / "eval_report.json"
     )
     monkeypatch.setitem(sys.modules, "weasyprint", None)
+    monkeypatch.setattr(
+        classifier,
+        "train_and_evaluate",
+        lambda *_args, **_kwargs: pytest.fail("analysis must not train the model"),
+    )
 
     facts = parse_ike(str(capture))
     assert facts["ike_version"] == "IKEv2"
@@ -237,7 +242,7 @@ def test_fixture_manifest_sha256_sidecar_and_expected_grade():
         assert digest == entry["capture_sha256"]
         assert entry["source_capture_sha256"]
         assert entry["fixture_packet_count"] > 0
-        assert facts["fact_sources"]["encryption_algorithm"].startswith("sidecar:")
+        assert facts["fact_sources"]["esp_encryption_algorithm"].startswith("sidecar:")
         assert scored["grade"] == entry["expected_grade"]
 
 
@@ -268,6 +273,26 @@ def test_pipeline_report_labels_sidecar_fact_source(tmp_path, monkeypatch):
     report_html = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "sidecar: documented testbed profile" in report_html
     assert result["score_result"]["grade"] == "A"
+
+
+def test_cli_fail_under_uses_the_security_score(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["pipeline", str(tmp_path / "capture.pcap"), "--fail-under", "80"],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "analyze",
+        lambda _path: {
+            "flow_features": [],
+            "score_result": {"security_score": 79},
+            "label": "capture",
+        },
+    )
+
+    assert pipeline.main() == 1
+    assert '"security_score": 79' in capsys.readouterr().out
 
 
 def test_pdf_export_writes_a_report_and_missing_renderer_is_an_error(
@@ -601,7 +626,7 @@ def test_valid_sidecar_applies_values_and_records_explicit_source(tmp_path):
 
     assert facts["mode"] == "tunnel"
     assert facts["pfs_enabled"] is False
-    assert facts["encryption_algorithm"] == "AES-GCM-256"
+    assert facts["esp_encryption_algorithm"] == "AES-GCM-256"
     assert facts["sa_lifetime_seconds"] == 3600
     assert facts["fact_sources"]["pfs_enabled"].startswith("sidecar:")
     scored = score_capture(facts)
@@ -627,7 +652,7 @@ def test_invalid_sidecar_values_are_ignored_with_warning(tmp_path):
 
     assert facts["mode"] is None
     assert facts["pfs_enabled"] is None
-    assert facts["encryption_algorithm"] == "AES-GCM-256"
+    assert facts["esp_encryption_algorithm"] is None
     sidecar_warnings = [
         warning for warning in facts["parse_warnings"] if "Sidecar " in warning
     ]

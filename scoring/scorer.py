@@ -9,7 +9,6 @@ import yaml
 
 from scoring.policy import grade_for_score, score_caps
 
-
 ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_RULES = ROOT / "scoring" / "rules.yaml"
 
@@ -40,7 +39,17 @@ def score_capture(
         field = rule.get("check_field")
         if not isinstance(rule_id, str) or not isinstance(field, str):
             raise ValueError("Every scoring rule needs string id and check_field")
+        source_field = field
         value = ike_facts.get(field)
+        if value is None and field == "encryption_algorithm":
+            source_field = "esp_encryption_algorithm"
+            value = ike_facts.get(source_field)
+        elif value is None and field == "integrity_algorithm":
+            source_field = "esp_integrity_algorithm"
+            value = ike_facts.get(source_field)
+        source = ike_facts.get("fact_sources", {}).get(
+            source_field, "capture parsing"
+        )
         is_triggered = False
         status = "NOT OBSERVABLE" if value is None else "PASS"
         if value is not None:
@@ -70,6 +79,7 @@ def score_capture(
                     "field": field,
                     "status": status,
                     "observed_value": value,
+                    "source": source,
                 }
             )
             continue
@@ -84,6 +94,7 @@ def score_capture(
                 "field": field,
                 "status": "FAIL",
                 "observed_value": value,
+                "source": source,
             }
         )
         findings.append(
@@ -93,6 +104,7 @@ def score_capture(
                 "message": rule.get("message", ""),
                 "field": field,
                 "observed_value": value,
+                "source": source,
                 "category": rule.get("category", "Session Management"),
             }
         )

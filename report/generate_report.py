@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ROOT / "report"

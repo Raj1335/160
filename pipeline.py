@@ -7,19 +7,19 @@ import hashlib
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
-from features.esp_features import extract_flow_features
+from features.window_features import extract_window_features
+from ipsec_parser.ike_parser import parse_ike
 from ml.train_classifier import (
     MODEL_PATH,
     load_evaluation_report,
     predict_traffic_type,
 )
-from parser.ike_parser import parse_ike
 from report.generate_report import generate_report
 from scoring.scorer import score_capture
-
 
 ROOT = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
@@ -50,9 +50,9 @@ def analyze(pcap_path: str) -> dict[str, Any]:
         raise FileNotFoundError(f"PCAP file does not exist: {capture}")
     label = capture.stem
     capture_digest = _file_sha256(capture)
-    run_id = f"{capture_digest[:8]}-{os.urandom(4).hex()}"
+    run_id = f"{capture_digest[:8]}-{uuid.uuid4().hex[:8]}"
     ike_facts = parse_ike(str(capture))
-    flow_features = extract_flow_features(str(capture), capture.name)
+    flow_features = extract_window_features(str(capture), capture.name)
 
     facts_dir = ROOT / "data" / "ike_facts"
     facts_dir.mkdir(parents=True, exist_ok=True)
@@ -121,14 +121,24 @@ def analyze(pcap_path: str) -> dict[str, Any]:
     }
 
 
-def main() -> None:
+def main() -> int:
     cli = argparse.ArgumentParser(description="Run the IPsec analyzer on a PCAP.")
     cli.add_argument("pcap", type=Path, help="Path to an input PCAP file")
+    cli.add_argument(
+        "--fail-under",
+        type=int,
+        default=0,
+        metavar="SCORE",
+        help="Exit with status 1 if the security score is below SCORE (0-100).",
+    )
     args = cli.parse_args()
+    if not 0 <= args.fail_under <= 100:
+        cli.error("--fail-under must be between 0 and 100.")
     result = analyze(str(args.pcap))
     printable = {key: value for key, value in result.items() if key != "flow_features"}
     print(json.dumps(printable, indent=2, default=str))
+    return int(result["score_result"]["security_score"] < args.fail_under)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -4,6 +4,10 @@
   "mode": "tunnel",
   "auth": "PSK",
   "pfs": true,
+  "esp_encryption": "AES-GCM-256",
+  "esp_integrity": "N/A (combined with AEAD)",
+  "dh_group": "MODP2048",
+  "sa_lifetime_seconds": 1800,
   "expected_grade": "A",
   "expected_findings": []
 }

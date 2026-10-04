@@ -1,3 +1,6 @@
+> Historical design and implementation notes; this document is not the
+> authoritative description of the current project. Use `README.md`.
+
 # Project Implementation Report
 
 > **Current status update (2026-10-01):** This report originally described the

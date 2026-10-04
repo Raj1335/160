@@ -1,9 +1,14 @@
 {
   "name": "ikev1-aggressive-weak",
   "ike_version": "IKEv1",
+  "ike_exchange_mode": "Aggressive Mode",
   "mode": "tunnel",
   "auth": "PSK",
   "pfs": true,
+  "esp_encryption": "3DES",
+  "esp_integrity": "HMAC-MD5-96",
+  "dh_group": "MODP1024",
+  "sa_lifetime_seconds": 1800,
   "expected_grade": "F",
-  "expected_findings": ["ikev1_deprecated", "ikev1_aggressive_mode"]
+  "expected_findings": ["ikev1_deprecated", "ikev1_aggressive_mode", "encryption_des", "weak_integrity", "weak_dh_group"]
 }

@@ -1,6 +1,6 @@
 # IPsec Analyzer
 
-An end-to-end, local-first system for inspecting IKEv2/IPsec packet captures:
+An end-to-end, local-first system for inspecting IKEv1/IKEv2/IPsec packet captures:
 streaming PCAP parsing, ESP flow extraction, capture-aware traffic
 classification, deterministic security findings, combined HTML reports, and a
 Streamlit web app. The analyzer never decrypts IKE or ESP traffic. Missing or
@@ -8,8 +8,9 @@ encrypted facts stay unknown.
 
 ## What it does
 
-1. Parses observable IKEv2 negotiation facts and records parse warnings.
-2. Extracts size/timing features per ESP SPI without decrypting payloads.
+1. Parses observable IKE negotiation facts and records parse warnings.
+2. Extracts size/timing features from bounded ESP windows without decrypting
+   payloads; long idle gaps split windows.
 3. Rebuilds a feature dataset from captures with SHA-256-verified provenance.
    Only entries marked as real in `data/capture_manifest.jsonl` are eligible for
    automatic training; uploads and synthetic fixtures are not training data.
@@ -47,7 +48,7 @@ Python 3.11+ is recommended:
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m streamlit run dashboard\app.py
 ```
 
@@ -58,32 +59,55 @@ same end-to-end analysis from the command line:
 python pipeline.py captures\your_capture.pcap
 ```
 
-Outputs include `data\ike_facts\`, `data\flow_features.csv`,
-`data\findings\`, `ml\eval_report.json`, and `reports\report_<capture>.html`.
-Analysis output and source captures are local and are not committed by default.
+Each analysis writes a unique HTML report, a per-run findings JSON and IKE facts.
+It does not train, rewrite, or promote a classifier. PDF export is enabled by
+default; set `IPSEC_ANALYZER_PDF=0` to disable it. If WeasyPrint cannot render,
+HTML analysis still succeeds and the export error is reported.
+On Windows, WeasyPrint also requires its native Pango/Cairo libraries; use a
+supported Linux environment for PDF rendering if those libraries are absent.
+
+The sample capture is a compact real testbed fixture:
+
+```powershell
+python -m pipeline captures\fixtures\ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_icmp-run01.pcap --fail-under 0
+```
 
 ## Collect genuine labeled IPsec training captures
 
-The repository contains a Docker Compose testbed using two real strongSwan
-IKEv2 endpoints. It negotiates AES-CBC-256 with HMAC-SHA2-256 IPsec SAs, captures the actual IKE/ESP
-packets, and generates three distinct kinds of traffic inside the tunnel:
-ICMP, HTTP, and bulk `iperf3`. These are genuine captures of a working local
-VPN testbed, not packets fabricated by Scapy. The data-collection machine needs
-Docker Desktop with Linux containers and kernel IPsec/XFRM support; Docker
-builds the endpoint image on first use.
+The repository contains a Docker Compose testbed with six selectable
+strongSwan profiles spanning IKEv1/IKEv2, AES-GCM/CBC and weak 3DES, main and
+aggressive exchange modes, and PFS enabled/disabled. Each profile generates
+ICMP, HTTP and bulk `iperf3` traffic. Docker Desktop is not a supported capture
+host unless its Linux kernel provides XFRM; use a native Linux VM/host with
+XFRM support, Docker Engine and Compose v2.
 
 ```powershell
-python tools\collect_real_dataset.py --repetitions 3 --duration-seconds 10
+python tools\collect_real_dataset.py --profile medium-cbc-tunnel-ikev2 --repetitions 3 --duration-seconds 10
 python -m features.esp_features
 python -m ml.train_classifier
 ```
 
-The collection command validates that each PCAP contains IKEv2 and ESP before
-writing its SHA-256 and traffic label to `data\capture_manifest.jsonl`. Three
-independent captures per traffic class are required for capture-grouped
-cross-validation. The training pipeline excludes captures whose hashes do not
-match the manifest. It never promotes an uploaded or synthetic capture to
-training data based on its filename alone.
+Omit `--profile` to collect all six profiles; provide a name to collect just
+one. Captures are refused if their output names already exist. The collector
+validates IKE and ESP traffic and writes SHA-256-bound records with profile
+metadata to `data/capture_manifest.jsonl`. Training requires genuine captures
+whose hashes and labels match this manifest. At least three independent
+captures per traffic class are required for capture-grouped cross-validation.
+
+### Profiles
+
+| Profile | IKE | ESP | PFS | Expected grade |
+|---|---|---|---|---|
+| `strong-gcm-tunnel-ikev2` | IKEv2, AES-GCM, MODP2048 | AES-GCM-256 | On | A |
+| `medium-cbc-tunnel-ikev2` | IKEv2, AES-CBC, MODP2048 | AES-CBC-256/SHA2-256 | On | A |
+| `weak-3des-tunnel-ikev2` | IKEv2, 3DES/SHA-1, MODP1024 | 3DES/SHA-1 | On | F |
+| `ikev1-main-aes` | IKEv1 Main Mode, AES-256 | AES-CBC-256/SHA2-256 | On | D |
+| `ikev1-aggressive-weak` | IKEv1 Aggressive, DES/MD5 | 3DES/MD5 | On | F |
+| `pfs-off-tunnel-ikev2` | IKEv2, AES-GCM, MODP2048 | AES-GCM-256 | Off | B |
+
+Grades describe this repository's configured prototype scoring policy, not a
+certification or a NIST compliance determination. Profile configuration is
+recorded in a per-capture JSON sidecar and labelled as sidecar-sourced data.
 
 On Kali Linux, the following command automates Docker/Compose setup, Python
 dependency installation, testbed capture collection, capture/manifest checks,
@@ -98,16 +122,13 @@ Docker. It defaults to three captures per traffic class and refuses to
 overwrite captures from a previous run. Optional arguments set repetitions
 (minimum 3) and bulk-transfer duration in seconds (minimum 3).
 
-A local Kali/strongSwan validation run completed with nine captures (three per
-traffic class), 18 ESP flows, and three-fold capture-grouped evaluation. The
-observed 100% accuracy is based only on this small, single-testbed dataset; it
-validates the collection and analysis path, not expected accuracy on independent
-VPN implementations or production networks. Captures and model artifacts from
-that run are retained locally rather than bundled here. You may also place
-independently collected PCAPs in `captures\`, but they remain ineligible for
-automatic training until their provenance and verified traffic labels are
-registered in the manifest. Do not register synthetic or unlabeled captures as
-real.
+An earlier local Kali run recorded nine baseline IKEv2 captures and an
+18-flow, three-fold capture-grouped evaluation. This small single-profile
+dataset is not bundled and cannot support leave-one-profile-out evaluation or
+generalization claims. The committed fixtures are three captures (one per
+traffic class), so they are explicitly insufficient to train a validated
+model. Add more independently captured runs and profiles before making an
+accuracy claim. Never register synthetic or unlabeled captures as real.
 
 For an independently sourced, licensed real IKEv2/ESP capture, register it
 explicitly with a verified class label and a provenance citation:
@@ -154,7 +175,9 @@ path.**
 ## Run tests
 
 ```powershell
-python -m pytest -q
+python -m pip install -r requirements-dev.txt
+ruff check .
+python -m pytest -q --cov
 ```
 
 ## Deploy the web app for free on Render
@@ -188,3 +211,51 @@ which is intentionally not assumed or required for local operation.
   testbed or otherwise independently verified.
 - The scoring policy cites NIST SP 800-77 Rev. 1 and RFC 8221 as references;
   review current guidance and organizational policy before relying on findings.
+
+## Scoring and observability
+
+The YAML policy is [`scoring/rules.yaml`](./scoring/rules.yaml). Each rule is
+reported as `PASS`, `FAIL`, or `NOT OBSERVABLE`; unknown inputs do not lower or
+increase the score. Reports include observed-rule coverage and whether a value
+came from packet parsing or an explicitly sourced sidecar. The score and grade
+are a documented prototype policy and should be reviewed against current
+standards and organizational requirements.
+
+## Sidecar format
+
+Place a JSON file beside a capture using the name `<capture>.pcap.json`. A
+non-empty `source` is required; only validated fields are applied, and
+capture-derived values take precedence:
+
+```json
+{
+  "source": "strongSwan testbed profile medium-cbc-tunnel-ikev2",
+  "mode": "tunnel",
+  "pfs": true,
+  "esp_encryption": "AES-CBC-256",
+  "esp_integrity": "HMAC-SHA2-256-128",
+  "sa_lifetime_seconds": 1800
+}
+```
+
+Sidecars describe externally sourced/configured facts. They are not evidence
+that encrypted negotiation payloads were decrypted.
+
+## Repository layout
+
+```text
+dashboard/       Streamlit UI
+captures/fixtures/ compact SHA-256-bound real capture fixtures and sidecars
+features/        Streaming ESP flow features
+ipsec_parser/    IKE parsing and sidecar validation
+ml/              Offline capture-grouped classifier training/evaluation
+report/           HTML template and optional PDF export
+scoring/          YAML findings policy and score/grade helpers
+testbed/profiles/ six strongSwan profile configurations
+tests/            Parser, scoring, provenance, and pipeline tests
+tools/            Collection and fixture utilities
+```
+
+## License
+
+This project is released under the [MIT License](./LICENSE).

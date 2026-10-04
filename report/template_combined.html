@@ -63,9 +63,9 @@
     <h2>Scoring Coverage</h2>
     <p>{{ score_result.coverage.observed }} of {{ score_result.coverage.total }} configured rules had observable inputs;
       {{ score_result.coverage.not_observable }} were not observable.</p>
-    <table><thead><tr><th>Rule</th><th>Field</th><th>Status</th><th>Observed value</th></tr></thead><tbody>
+    <table><thead><tr><th>Rule</th><th>Field</th><th>Status</th><th>Observed value</th><th>Source</th></tr></thead><tbody>
       {% for rule in score_result.rule_results %}
-      <tr><td>{{ rule.id }}</td><td>{{ rule.field }}</td><td>{{ rule.status }}</td><td><code>{{ rule.observed_value if rule.observed_value is not none else "Unknown / not observable" }}</code></td></tr>
+      <tr><td>{{ rule.id }}</td><td>{{ rule.field }}</td><td>{{ rule.status }}</td><td><code>{{ rule.observed_value if rule.observed_value is not none else "Unknown / not observable" }}</code></td><td>{{ rule.source }}</td></tr>
       {% endfor %}
     </tbody></table>
   </section>

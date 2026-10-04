@@ -19,8 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from features.esp_features import extract_flow_features
-from parser.ike_parser import parse_ike
-
+from ipsec_parser.ike_parser import parse_ike
 
 COMPOSE_FILE = ROOT / "testbed" / "docker-compose.yml"
 CAPTURES_DIR = ROOT / "captures"
@@ -113,6 +112,10 @@ def _load_profile(name: str) -> dict[str, Any]:
         "mode",
         "auth",
         "pfs",
+        "esp_encryption",
+        "esp_integrity",
+        "dh_group",
+        "sa_lifetime_seconds",
         "expected_grade",
         "expected_findings",
     }
@@ -127,7 +130,29 @@ def _load_profile(name: str) -> dict[str, Any]:
         metadata["expected_findings"], list
     ):
         raise ValueError(f"Invalid PFS or expected_findings value in {metadata_path}")
+    if not isinstance(metadata["sa_lifetime_seconds"], int) or not isinstance(
+        metadata["dh_group"], str
+    ):
+        raise ValueError(f"Invalid cryptographic metadata in {metadata_path}")
     return metadata
+
+
+def _write_capture_sidecar(
+    capture_path: Path, profile: str, metadata: dict[str, Any]
+) -> None:
+    sidecar = {
+        "source": f"strongSwan testbed profile {profile}",
+        "mode": metadata["mode"],
+        "pfs": metadata["pfs"],
+        "esp_encryption": metadata["esp_encryption"],
+        "esp_integrity": metadata["esp_integrity"],
+        "dh_group": metadata["dh_group"],
+        "sa_lifetime_seconds": metadata["sa_lifetime_seconds"],
+    }
+    if metadata["ike_version"] == "IKEv1":
+        sidecar["ike_exchange_mode"] = metadata["ike_exchange_mode"]
+    sidecar_path = capture_path.with_suffix(capture_path.suffix + ".json")
+    sidecar_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
 
 
 def _activate_profile(name: str) -> None:
@@ -233,6 +258,7 @@ def _capture_one(
             "Check the strongSwan logs and Docker host IPsec support."
         )
 
+    _write_capture_sidecar(output_path, profile, metadata)
     return {
         "capture_file": filename,
         "capture_sha256": _digest(output_path),
@@ -292,7 +318,12 @@ def collect(
         for traffic_type in TRAFFIC_TYPES
         for run_number in range(1, repetitions + 1)
     ]
-    conflicts = [path.name for path in existing_captures if path.exists()]
+    conflicts = [
+        candidate.name
+        for path in existing_captures
+        for candidate in (path, path.with_suffix(path.suffix + ".json"))
+        if candidate.exists()
+    ]
     if conflicts:
         raise FileExistsError(
             "Refusing to overwrite existing capture(s): " + ", ".join(conflicts)

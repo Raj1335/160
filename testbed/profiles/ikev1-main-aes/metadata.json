@@ -1,9 +1,14 @@
 {
   "name": "ikev1-main-aes",
   "ike_version": "IKEv1",
+  "ike_exchange_mode": "Main Mode",
   "mode": "tunnel",
   "auth": "PSK",
   "pfs": true,
+  "esp_encryption": "AES-CBC-256",
+  "esp_integrity": "HMAC-SHA2-256-128",
+  "dh_group": "MODP2048",
+  "sa_lifetime_seconds": 1800,
   "expected_grade": "D",
   "expected_findings": ["ikev1_deprecated"]
 }

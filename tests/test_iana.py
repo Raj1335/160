@@ -1,4 +1,4 @@
-from parser.ike_parser import _DH, _ENCRYPTION, _INTEGRITY, _PRF
+from ipsec_parser.ike_parser import _DH, _ENCRYPTION, _INTEGRITY, _PRF
 
 
 def test_iana_encryption_transform_ids():

@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
 .venv/
 .venv-real-validation/
 ipsec-real-validation-results.tar.gz
@@ -11,10 +13,14 @@ captures/fixtures/*
 !captures/fixtures/**
 data/*.csv
 data/capture_manifest.jsonl
+!data/capture_manifest.jsonl
 data/ike_facts/
 data/findings/
 ml/model.pkl
+!ml/model.pkl
+!ml/model.pkl.sha256
 ml/eval_report.json
+!ml/eval_report.json
 reports/*
 !reports/.gitkeep
 SIH26160_Full_Pipeline_Spec.md

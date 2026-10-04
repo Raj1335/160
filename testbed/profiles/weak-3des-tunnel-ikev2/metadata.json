@@ -4,6 +4,10 @@
   "mode": "tunnel",
   "auth": "PSK",
   "pfs": true,
+  "esp_encryption": "3DES",
+  "esp_integrity": "HMAC-SHA1-96",
+  "dh_group": "MODP1024",
+  "sa_lifetime_seconds": 1800,
   "expected_grade": "F",
   "expected_findings": ["encryption_des", "weak_dh_group", "weak_integrity"]
 }

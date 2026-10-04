@@ -6,7 +6,7 @@ import argparse
 import struct
 from pathlib import Path
 
-from scapy.all import Ether, IP, Raw, UDP, wrpcap
+from scapy.all import IP, UDP, Ether, Raw, wrpcap
 
 
 def _ike_message(

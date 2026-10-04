@@ -15,13 +15,16 @@ import pandas as pd
 import sklearn
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+)
 from sklearn.model_selection import (
     StratifiedGroupKFold,
     cross_val_predict,
     cross_val_score,
 )
-
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "ml" / "model.pkl"
@@ -37,6 +40,7 @@ NON_FEATURE_COLUMNS = {
     "capture_sha256",
     "capture_source",
     "profile",
+    "window_index",
     "is_real_capture",
 }
 

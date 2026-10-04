@@ -26,7 +26,7 @@ fi
 
 for traffic in icmp web bulk; do
   for ((run = 1; run <= REPETITIONS; run++)); do
-    capture="$CAPTURES_DIR/tunnel_aes256cbc_pfs-on_ipv4_${traffic}-run$(printf '%02d' "$run").pcap"
+    capture="$CAPTURES_DIR/ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_${traffic}-run$(printf '%02d' "$run").pcap"
     if [[ -e "$capture" ]]; then
       echo "Refusing to overwrite existing capture: $capture" >&2
       echo "Move that capture elsewhere before starting a fresh validation run." >&2
@@ -56,7 +56,9 @@ retry() {
 
 echo "[1/7] Installing Docker, Compose, and Python environment tools..."
 retry sudo apt-get update
-retry sudo apt-get install -y docker.io docker-compose python3-venv python3-pip
+retry sudo apt-get install -y \
+  docker.io docker-compose libatomic1 libcairo2 libgdk-pixbuf-2.0-0 libffi-dev \
+  libpango-1.0-0 python3-venv python3-pip shared-mime-info
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker installation did not provide the docker command." >&2
@@ -80,8 +82,9 @@ cleanup() {
   if (( COLLECTION_IN_PROGRESS )); then
     for traffic in icmp web bulk; do
       for ((run = 1; run <= REPETITIONS; run++)); do
-        partial="$CAPTURES_DIR/tunnel_aes256cbc_pfs-on_ipv4_${traffic}-run$(printf '%02d' "$run").pcap"
+        partial="$CAPTURES_DIR/ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_${traffic}-run$(printf '%02d' "$run").pcap"
         rm -f -- "$partial"
+        rm -f -- "$partial.json"
       done
     done
   fi
@@ -108,7 +111,7 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
   python3 -m venv "$VENV_DIR"
 fi
 retry "$VENV_DIR/bin/python" -m pip install --upgrade pip
-retry "$VENV_DIR/bin/python" -m pip install -r "$ROOT/requirements.txt"
+retry "$VENV_DIR/bin/python" -m pip install -r "$ROOT/requirements-dev.txt"
 
 echo "[4/7] Running project tests..."
 cd "$ROOT"
@@ -118,7 +121,8 @@ echo "[5/7] Capturing genuine strongSwan IKEv2/ESP traffic..."
 COLLECTION_IN_PROGRESS=1
 "$VENV_DIR/bin/python" "$ROOT/tools/collect_real_dataset.py" \
   --repetitions "$REPETITIONS" \
-  --duration-seconds "$DURATION_SECONDS"
+  --duration-seconds "$DURATION_SECONDS" \
+  --profile medium-cbc-tunnel-ikev2
 COLLECTION_IN_PROGRESS=0
 
 echo "[6/7] Verifying captures, building features, and evaluating the classifier..."
@@ -142,7 +146,9 @@ expected = repetitions * 3
 entries = [
     entry for entry in entries
     if entry.get("source") == "strongswan-docker-testbed"
-    and entry.get("capture_file", "").startswith("tunnel_aes256cbc_pfs-on_ipv4_")
+    and entry.get("capture_file", "").startswith(
+        "ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_"
+    )
 ]
 if len(entries) != expected:
     raise SystemExit(f"Expected {expected} new testbed manifest entries; found {len(entries)}.")
@@ -175,7 +181,7 @@ print(
 PY
 
 echo "[7/7] Running full analysis and producing an HTML report..."
-FIRST_CAPTURE="$CAPTURES_DIR/tunnel_aes256cbc_pfs-on_ipv4_icmp-run01.pcap"
+FIRST_CAPTURE="$CAPTURES_DIR/ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_icmp-run01.pcap"
 "$VENV_DIR/bin/python" "$ROOT/pipeline.py" "$FIRST_CAPTURE"
 
 echo
