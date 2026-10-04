@@ -5,8 +5,10 @@ __pycache__/
 .venv-real-validation/
 ipsec-real-validation-results.tar.gz
 venv/
-captures/*.pcap
-captures/*.pcapng
+captures/*
+!captures/fixtures/
+captures/fixtures/*
+!captures/fixtures/**
 data/*.csv
 data/capture_manifest.jsonl
 data/ike_facts/

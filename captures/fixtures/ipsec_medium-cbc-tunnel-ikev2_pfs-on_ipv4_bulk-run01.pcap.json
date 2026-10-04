@@ -1,0 +1,8 @@
+{
+  "source": "strongSwan Docker testbed profile medium-cbc-tunnel-ikev2",
+  "mode": "tunnel",
+  "pfs": true,
+  "esp_encryption": "AES-CBC-256",
+  "esp_integrity": "HMAC-SHA2-256-128",
+  "sa_lifetime_seconds": 1800
+}

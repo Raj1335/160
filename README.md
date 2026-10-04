@@ -22,10 +22,18 @@ encrypted facts stay unknown.
 6. Presents the same pipeline in a local or hosted Streamlit app.
 
 The score is a prototype rule score, not a calibrated probability or production
-security audit. No PCAPs or trained model are bundled; generated demo PCAPs are
-explicitly synthetic. Real strongSwan testbed collection is documented below.
+security audit. No full training captures or trained model are bundled;
+generated demo PCAPs are explicitly synthetic. Real strongSwan testbed
+collection is documented below.
 Results from that controlled lab do not by themselves establish performance on
 independent production VPNs.
+
+Three compact, hash-bound fixtures derived from a genuine strongSwan testbed run
+are included in [`captures/fixtures/`](./captures/fixtures/). Each has a
+manifest record with the SHA-256 of the bundled PCAP and a sidecar documenting
+the configured testbed values; those sidecar values are explicitly identified
+as configuration metadata, not as values decoded from encrypted payloads.
+Analyze one with `python pipeline.py captures/fixtures/<capture>.pcap`.
 
 ## Run locally (Windows PowerShell)
 

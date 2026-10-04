@@ -52,6 +52,103 @@ _DH = {
     21: "ECP521",
     31: "Curve25519",
 }
+_SIDECAR_FIELDS = {
+    "mode": ("mode", {"tunnel", "transport"}),
+    "esp_encryption": (
+        "encryption_algorithm",
+        {
+            "AES-CBC-128",
+            "AES-CBC-192",
+            "AES-CBC-256",
+            "AES-GCM-128",
+            "AES-GCM-192",
+            "AES-GCM-256",
+            "3DES",
+            "DES",
+            "NULL",
+        },
+    ),
+    "esp_integrity": (
+        "integrity_algorithm",
+        {
+            "HMAC-MD5",
+            "HMAC-MD5-96",
+            "HMAC-SHA1",
+            "HMAC-SHA1-96",
+            "HMAC-SHA2-256",
+            "HMAC-SHA2-256-128",
+            "HMAC-SHA2-384",
+            "HMAC-SHA2-384-192",
+            "HMAC-SHA2-512",
+            "HMAC-SHA2-512-256",
+            "AES-XCBC-MAC-96",
+            "AES-CMAC-96",
+            "N/A (combined with AEAD)",
+            "NULL",
+        },
+    ),
+    "dh_group": ("dh_group", set(_DH.values())),
+    "prf_algorithm": ("prf_algorithm", set(_PRF.values())),
+    "ike_version": ("ike_version", {"IKEv1", "IKEv2"}),
+}
+_SIDECAR_BOOLS = {"pfs": "pfs_enabled"}
+_SIDECAR_POSITIVE_INTS = {"sa_lifetime_seconds"}
+
+
+def _apply_sidecar(path: Path, facts: dict[str, Any]) -> None:
+    """Apply strictly validated, adjacent deployment metadata without guessing."""
+    sidecar_path = path.with_suffix(path.suffix + ".json")
+    if not sidecar_path.is_file():
+        return
+    try:
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        facts["parse_warnings"].append(
+            f"Sidecar {sidecar_path.name} was ignored: {exc}"
+        )
+        return
+    if not isinstance(sidecar, dict):
+        facts["parse_warnings"].append(
+            f"Sidecar {sidecar_path.name} was ignored: expected a JSON object."
+        )
+        return
+
+    source = sidecar.get("source")
+    if not isinstance(source, str) or not source.strip():
+        facts["parse_warnings"].append(
+            f"Sidecar {sidecar_path.name} was ignored: a non-empty source is required."
+        )
+        return
+    sources = facts.setdefault("fact_sources", {})
+    for key, value in sidecar.items():
+        if key == "source":
+            continue
+        target = None
+        valid = False
+        if key in _SIDECAR_FIELDS:
+            target, allowed = _SIDECAR_FIELDS[key]
+            valid = isinstance(value, str) and value in allowed
+        elif key in _SIDECAR_BOOLS:
+            target = _SIDECAR_BOOLS[key]
+            valid = isinstance(value, bool)
+        elif key in _SIDECAR_POSITIVE_INTS:
+            target = key
+            valid = isinstance(value, int) and not isinstance(value, bool) and value > 0
+        if target is None:
+            facts["parse_warnings"].append(
+                f"Sidecar field {key!r} was ignored: unsupported field."
+            )
+        elif not valid:
+            facts["parse_warnings"].append(
+                f"Sidecar field {key!r} was ignored: invalid value."
+            )
+        else:
+            facts[target] = value
+            sources[target] = f"sidecar: {source.strip()}"
+            if target == "encryption_algorithm" and "GCM" in value:
+                if sidecar.get("esp_integrity") is None:
+                    facts["integrity_algorithm"] = "N/A (combined with AEAD)"
+                    sources["integrity_algorithm"] = f"sidecar: {source.strip()}"
 
 
 def _ike_payloads(data: bytes, first_payload: int) -> list[tuple[int, bytes]]:
@@ -300,7 +397,7 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
             facts["pfs_enabled"] = any(child_dh_results)
         else:
             facts["parse_warnings"].append(
-                "PFS cannot be confirmed from this capture: no parseable CREATE_CHILD_SA exchange was observed."
+                "PFS is not observable directly in this capture: no parseable CREATE_CHILD_SA exchange was observed."
             )
 
     auth_exchange_complete = any(
@@ -336,6 +433,7 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
         facts["spi_responder"] = (
             f"0x{observed_spis[1]:08x}" if len(observed_spis) > 1 else None
         )
+    _apply_sidecar(path, facts)
     return facts
 
 

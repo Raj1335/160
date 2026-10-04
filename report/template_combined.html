@@ -56,9 +56,11 @@
   {% endif %}
   <section>
     <h2>Technical Detail</h2>
-    <table><thead><tr><th>Field</th><th>Observed value</th></tr></thead><tbody>
+    <table><thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead><tbody>
       {% for name, value in ike_facts.items() %}
-      <tr><th>{{ name|replace("_", " ")|title }}</th><td><code>{{ value if value is not none else "Unknown / not observable" }}</code></td></tr>
+      {% if name != "fact_sources" %}
+      <tr><th>{{ name|replace("_", " ")|title }}</th><td><code>{{ value if value is not none else "Unknown / not observable" }}</code></td><td>{{ ike_facts.fact_sources.get(name, "capture parsing") if ike_facts.fact_sources is defined else "capture parsing" }}</td></tr>
+      {% endif %}
       {% endfor %}
     </tbody></table>
   </section>

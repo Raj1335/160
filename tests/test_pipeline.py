@@ -68,6 +68,8 @@ def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
     assert (tmp_path / "data" / "findings" / f"findings_{capture.stem}.json").is_file()
     report_html = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "Classifier not yet validated" in report_html
+    assert "Grade: <strong>A</strong>" in report_html
+    assert "Scoring Coverage" in report_html
 
 
 def test_scorer_applies_hard_cap_for_weak_encryption():
@@ -198,6 +200,53 @@ def test_training_dataset_requires_hash_verified_real_capture_manifest(tmp_path)
     changed_dataset = build_feature_dataset(captures, data_dir / "flow_features.csv")
     assert not changed_dataset["is_real_capture"].any()
     assert set(changed_dataset["capture_source"]) == {"unverified"}
+
+
+def test_fixture_manifest_sha256_sidecar_and_expected_grade():
+    fixture_dir = Path(__file__).resolve().parents[1] / "captures" / "fixtures"
+    manifest_path = fixture_dir / "capture_manifest.jsonl"
+    entries = [
+        json.loads(line)
+        for line in manifest_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(entries) == 3
+    for entry in entries:
+        capture = fixture_dir / entry["capture_file"]
+        digest = hashlib.sha256(capture.read_bytes()).hexdigest()
+        facts = parse_ike(str(capture))
+        scored = score_capture(facts)
+
+        assert entry["is_real_capture"] is True
+        assert digest == entry["capture_sha256"]
+        assert entry["source_capture_sha256"]
+        assert entry["fixture_packet_count"] > 0
+        assert facts["fact_sources"]["encryption_algorithm"].startswith("sidecar:")
+        assert scored["grade"] == entry["expected_grade"]
+
+
+def test_pipeline_report_labels_sidecar_fact_source(tmp_path, monkeypatch):
+    capture = generate_demo_capture(tmp_path / "sidecar_report.pcap")
+    Path(f"{capture}.json").write_text(
+        json.dumps(
+            {
+                "source": "documented testbed profile",
+                "mode": "tunnel",
+                "pfs": True,
+                "esp_encryption": "AES-CBC-256",
+                "esp_integrity": "HMAC-SHA2-256-128",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "captures").mkdir()
+    monkeypatch.setattr(pipeline, "ROOT", tmp_path)
+
+    result = pipeline.analyze(str(capture))
+
+    report_html = Path(result["report_path"]).read_text(encoding="utf-8")
+    assert "sidecar: documented testbed profile" in report_html
+    assert result["score_result"]["grade"] == "A"
 
 
 def test_classifier_excludes_unverified_captures(tmp_path, monkeypatch):
@@ -427,6 +476,60 @@ def test_truncated_ike_packet_does_not_create_false_exchange_facts(tmp_path):
 
     assert facts["ike_exchange_mode"] is None
     assert facts["child_sa_established"] is None
+
+
+def test_valid_sidecar_applies_values_and_records_explicit_source(tmp_path):
+    capture = generate_demo_capture(tmp_path / "sidecar.pcap")
+    Path(f"{capture}.json").write_text(
+        json.dumps(
+            {
+                "source": "strongSwan profile strong-gcm-tunnel-ikev2",
+                "mode": "tunnel",
+                "pfs": False,
+                "esp_encryption": "AES-GCM-256",
+                "esp_integrity": "N/A (combined with AEAD)",
+                "sa_lifetime_seconds": 3600,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    facts = parse_ike(str(capture))
+
+    assert facts["mode"] == "tunnel"
+    assert facts["pfs_enabled"] is False
+    assert facts["encryption_algorithm"] == "AES-GCM-256"
+    assert facts["sa_lifetime_seconds"] == 3600
+    assert facts["fact_sources"]["pfs_enabled"].startswith("sidecar:")
+    scored = score_capture(facts)
+    assert any(item["id"] == "pfs_disabled" for item in scored["findings"])
+
+
+def test_invalid_sidecar_values_are_ignored_with_warning(tmp_path):
+    capture = generate_demo_capture(tmp_path / "bad_sidecar.pcap")
+    Path(f"{capture}.json").write_text(
+        json.dumps(
+            {
+                "source": "test fixture metadata",
+                "mode": "guess",
+                "pfs": "false",
+                "esp_encryption": ["AES-GCM-256"],
+                "unrecognized": "value",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    facts = parse_ike(str(capture))
+
+    assert facts["mode"] is None
+    assert facts["pfs_enabled"] is None
+    assert facts["encryption_algorithm"] == "AES-GCM-256"
+    sidecar_warnings = [
+        warning for warning in facts["parse_warnings"] if "Sidecar " in warning
+    ]
+    assert len(sidecar_warnings) == 4
+    assert all("ignored" in warning for warning in sidecar_warnings)
 
 
 @pytest.mark.parametrize(
