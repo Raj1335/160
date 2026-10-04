@@ -30,7 +30,23 @@
   <section>
     <h2>Executive Summary</h2>
     {% for sentence in executive_summary %}<p>{{ sentence }}</p>{% endfor %}
+    {% if top_findings %}
+    <h3>Top findings</h3>
+    <ol>{% for finding in top_findings %}
+      <li><strong>{{ finding.severity|upper }} — {{ finding.id }}</strong>: {{ finding.message }}</li>
+    {% endfor %}</ol>
+    {% endif %}
   </section>
+  {% if remediation %}
+  <section>
+    <h2>Remediation Config</h2>
+    <p>Review endpoint addresses, authentication, and organizational policy before deployment. The kernel inspection commands below are not a substitute for negotiating and installing an SA; key material must not be copied into an ad hoc command.</p>
+    <h3>strongSwan proposal</h3>
+    <pre><code>{{ remediation.strongswan }}</code></pre>
+    <h3>Linux XFRM verification</h3>
+    <pre><code>{{ remediation.xfrm }}</code></pre>
+  </section>
+  {% endif %}
   <section>
     <h2>Threat Matrix</h2>
     {% if score_result.threat_matrix %}

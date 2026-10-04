@@ -3,18 +3,44 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
-from features.esp_features import build_feature_dataset, extract_flow_features
-from ml.train_classifier import predict_traffic_type, train_and_evaluate
+from features.esp_features import extract_flow_features
+from ml.train_classifier import (
+    MODEL_PATH,
+    load_evaluation_report,
+    predict_traffic_type,
+)
 from parser.ike_parser import parse_ike
 from report.generate_report import generate_report
 from scoring.scorer import score_capture
 
 
 ROOT = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as capture_file:
+        for chunk in iter(lambda: capture_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _atomic_json_write(path: Path, value: Any) -> None:
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary_path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def analyze(pcap_path: str) -> dict[str, Any]:
@@ -23,23 +49,19 @@ def analyze(pcap_path: str) -> dict[str, Any]:
     if not capture.is_file():
         raise FileNotFoundError(f"PCAP file does not exist: {capture}")
     label = capture.stem
+    capture_digest = _file_sha256(capture)
+    run_id = f"{capture_digest[:8]}-{os.urandom(4).hex()}"
     ike_facts = parse_ike(str(capture))
     flow_features = extract_flow_features(str(capture), capture.name)
 
     facts_dir = ROOT / "data" / "ike_facts"
     facts_dir.mkdir(parents=True, exist_ok=True)
-    (facts_dir / f"ike_facts_{capture.stem}.json").write_text(
-        json.dumps(ike_facts, indent=2), encoding="utf-8"
+    _atomic_json_write(
+        facts_dir / f"ike_facts_{capture.stem}-{run_id}.json", ike_facts
     )
 
-    dataset_path = ROOT / "data" / "flow_features.csv"
-    build_feature_dataset(ROOT / "captures", dataset_path)
-    training = train_and_evaluate(str(dataset_path))
-    (ROOT / "ml").mkdir(parents=True, exist_ok=True)
-    (ROOT / "ml" / "eval_report.json").write_text(
-        json.dumps(training, indent=2), encoding="utf-8"
-    )
-    if training["status"] == "trained" and not flow_features.empty:
+    training = load_evaluation_report()
+    if training["status"] == "trained" and MODEL_PATH.is_file() and not flow_features.empty:
         flow_predictions = [
             predict_traffic_type(row.to_dict())
             for _, row in flow_features.iterrows()
@@ -60,15 +82,31 @@ def analyze(pcap_path: str) -> dict[str, Any]:
     score_result = score_capture(ike_facts)
     findings_dir = ROOT / "data" / "findings"
     findings_dir.mkdir(parents=True, exist_ok=True)
-    findings_path = findings_dir / f"findings_{capture.stem}.json"
-    findings_path.write_text(json.dumps(score_result, indent=2), encoding="utf-8")
+    findings_path = findings_dir / f"findings_{capture.stem}-{run_id}.json"
+    _atomic_json_write(findings_path, score_result)
     report_path = generate_report(
         label,
         ike_facts,
         classifier_result,
         score_result,
         output_dir=str(ROOT / "reports"),
+        run_id=run_id,
     )
+    pdf_path = None
+    pdf_export_error = None
+    if os.getenv("IPSEC_ANALYZER_PDF", "1").strip().casefold() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        try:
+            from report.export_pdf import export_pdf
+
+            pdf_path = export_pdf(report_path)
+        except Exception as exc:
+            pdf_export_error = str(exc)
+            LOGGER.warning("PDF report export failed for %s: %s", report_path, exc)
     return {
         "label": label,
         "ike_facts": ike_facts,
@@ -78,6 +116,8 @@ def analyze(pcap_path: str) -> dict[str, Any]:
         "score_result": score_result,
         "findings_path": str(findings_path),
         "report_path": report_path,
+        "pdf_path": pdf_path,
+        "pdf_export_error": pdf_export_error,
     }
 
 

@@ -26,6 +26,7 @@ from sklearn.model_selection import (
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "ml" / "model.pkl"
 MODEL_SHA256_PATH = MODEL_PATH.with_suffix(MODEL_PATH.suffix + ".sha256")
+EVAL_REPORT_PATH = ROOT / "ml" / "eval_report.json"
 NON_FEATURE_COLUMNS = {
     "label",
     "spi",
@@ -85,6 +86,27 @@ def _load_model_bundle() -> dict[str, Any]:
             f"installed version is {sklearn.__version__}."
         )
     return bundle
+
+
+def load_evaluation_report() -> dict[str, Any]:
+    """Load stored offline evaluation without retraining during analysis."""
+    if not EVAL_REPORT_PATH.is_file():
+        return _insufficient_result(0, 0)
+    report = json.loads(EVAL_REPORT_PATH.read_text(encoding="utf-8"))
+    if not isinstance(report, dict) or report.get("status") not in {
+        "trained",
+        "insufficient_data",
+    }:
+        raise ValueError(f"Invalid classifier evaluation report: {EVAL_REPORT_PATH}")
+    if report["status"] == "trained":
+        _load_model_bundle()
+        report_digest = report.get("model_sha256")
+        sidecar_digest = MODEL_SHA256_PATH.read_text(encoding="ascii").strip()
+        if report_digest != sidecar_digest:
+            raise ValueError(
+                "Classifier evaluation report does not match the installed model."
+            )
+    return report
 
 
 def _unverified_result(n_samples: int) -> dict[str, Any]:

@@ -4,6 +4,8 @@ import struct
 import hashlib
 import json
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -18,6 +20,8 @@ from ml.train_classifier import predict_traffic_type, train_and_evaluate
 import ml.train_classifier as classifier
 import pipeline
 from parser.ike_parser import parse_ike
+from report.export_pdf import export_pdf
+from report.generate_report import generate_report
 from scoring.scorer import score_capture
 from tools.generate_demo_capture import generate_demo_capture
 from tools.register_capture import register_capture
@@ -28,6 +32,11 @@ def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
     capture = generate_demo_capture(tmp_path / "demo_aesgcm256_pfs-on_ipv4_icmp.pcap")
     (tmp_path / "captures").mkdir()
     monkeypatch.setattr(pipeline, "ROOT", tmp_path)
+    monkeypatch.setattr(pipeline, "MODEL_PATH", tmp_path / "ml" / "model.pkl")
+    monkeypatch.setattr(
+        classifier, "EVAL_REPORT_PATH", tmp_path / "ml" / "eval_report.json"
+    )
+    monkeypatch.setitem(sys.modules, "weasyprint", None)
 
     facts = parse_ike(str(capture))
     assert facts["ike_version"] == "IKEv2"
@@ -64,13 +73,15 @@ def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
     } <= result.keys()
     assert result["ike_facts"]["ike_sa_established"] is True
     assert result["classifier_training"]["status"] == "insufficient_data"
-    assert pd.read_csv(tmp_path / "data" / "flow_features.csv").empty
-    assert (tmp_path / "data" / "ike_facts" / f"ike_facts_{capture.stem}.json").is_file()
-    assert (tmp_path / "data" / "findings" / f"findings_{capture.stem}.json").is_file()
+    assert not (tmp_path / "data" / "flow_features.csv").exists()
+    assert Path(result["findings_path"]).is_file()
+    assert list((tmp_path / "data" / "ike_facts").glob(f"ike_facts_{capture.stem}-*.json"))
     report_html = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "Classifier not yet validated" in report_html
     assert "Grade: <strong>A</strong>" in report_html
     assert "Scoring Coverage" in report_html
+    assert result["pdf_path"] is None
+    assert "not installed" in result["pdf_export_error"]
 
 
 def test_scorer_applies_hard_cap_for_weak_encryption():
@@ -246,12 +257,67 @@ def test_pipeline_report_labels_sidecar_fact_source(tmp_path, monkeypatch):
     )
     (tmp_path / "captures").mkdir()
     monkeypatch.setattr(pipeline, "ROOT", tmp_path)
+    monkeypatch.setattr(pipeline, "MODEL_PATH", tmp_path / "ml" / "model.pkl")
+    monkeypatch.setattr(
+        classifier, "EVAL_REPORT_PATH", tmp_path / "ml" / "eval_report.json"
+    )
+    monkeypatch.setitem(sys.modules, "weasyprint", None)
 
     result = pipeline.analyze(str(capture))
 
     report_html = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "sidecar: documented testbed profile" in report_html
     assert result["score_result"]["grade"] == "A"
+
+
+def test_pdf_export_writes_a_report_and_missing_renderer_is_an_error(
+    tmp_path, monkeypatch
+):
+    html_path = tmp_path / "report.html"
+    html_path.write_text("<html><body>report</body></html>", encoding="utf-8")
+
+    class FakeHTML:
+        def __init__(self, filename, base_url):
+            self.filename = filename
+            self.base_url = base_url
+
+        def write_pdf(self, destination):
+            Path(destination).write_bytes(b"%PDF-fake")
+
+    monkeypatch.setitem(sys.modules, "weasyprint", SimpleNamespace(HTML=FakeHTML))
+    pdf_path = export_pdf(str(html_path))
+    assert Path(pdf_path).read_bytes() == b"%PDF-fake"
+
+    monkeypatch.setitem(sys.modules, "weasyprint", None)
+    with pytest.raises(RuntimeError, match="not installed"):
+        export_pdf(str(html_path))
+
+
+def test_report_contains_remediation_only_for_observed_weak_crypto(tmp_path):
+    capture_label = "sample"
+    facts = {
+        "encryption_algorithm": "3DES",
+        "parse_warnings": [],
+    }
+    score = score_capture(facts)
+    report_path = generate_report(
+        capture_label,
+        facts,
+        {
+            "predicted_label": None,
+            "confidence": None,
+            "note": "unavailable",
+            "status": "insufficient_data",
+        },
+        score,
+        str(tmp_path),
+        run_id="run-1",
+    )
+    report_html = Path(report_path).read_text(encoding="utf-8")
+
+    assert "Remediation Config" in report_html
+    assert "aes256gcm16-prfsha256-curve25519!" in report_html
+    assert "ip xfrm state list" in report_html
 
 
 def test_classifier_excludes_unverified_captures(tmp_path, monkeypatch):

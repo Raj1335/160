@@ -54,6 +54,16 @@ def _show_results(result: dict) -> None:
         file_name=report_path.name,
         mime="text/html",
     )
+    if result.get("pdf_path"):
+        pdf_path = Path(result["pdf_path"])
+        st.download_button(
+            "Download PDF report",
+            data=pdf_path.read_bytes(),
+            file_name=pdf_path.name,
+            mime="application/pdf",
+        )
+    elif result.get("pdf_export_error"):
+        st.warning(f"PDF export unavailable: {result['pdf_export_error']}")
 
 
 def _training_data_status() -> None:
