@@ -9,7 +9,7 @@ services:
       net.ipv4.ip_forward: "1"
     volumes:
       - ../captures:/captures
-      - ./west/ipsec.conf:/etc/ipsec.conf:ro
+      - ./profiles:/profiles:ro
       - ./shared/ipsec.secrets:/etc/ipsec.secrets:ro
     networks:
       ipsec-lab:
@@ -24,7 +24,7 @@ services:
     sysctls:
       net.ipv4.ip_forward: "1"
     volumes:
-      - ./east/ipsec.conf:/etc/ipsec.conf:ro
+      - ./profiles:/profiles:ro
       - ./shared/ipsec.secrets:/etc/ipsec.secrets:ro
     networks:
       ipsec-lab:

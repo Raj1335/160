@@ -1,0 +1,9 @@
+{
+  "name": "weak-3des-tunnel-ikev2",
+  "ike_version": "IKEv2",
+  "mode": "tunnel",
+  "auth": "PSK",
+  "pfs": true,
+  "expected_grade": "F",
+  "expected_findings": ["encryption_des", "weak_dh_group", "weak_integrity"]
+}

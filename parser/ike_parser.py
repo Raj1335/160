@@ -154,6 +154,7 @@ def _esp_info(packet: Any) -> tuple[int, str, str] | None:
 def _empty_facts() -> dict[str, Any]:
     return {
         "ike_version": None,
+        "ike_exchange_mode": None,
         "mode": None,
         "encryption_algorithm": None,
         "integrity_algorithm": None,
@@ -217,6 +218,11 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
                             message_length = struct.unpack_from("!I", payload, 24)[0]
                             if version >> 4 in (1, 2) and 28 <= message_length <= len(payload):
                                 facts["ike_version"] = f"IKEv{version >> 4}"
+                                if version >> 4 == 1:
+                                    facts["ike_exchange_mode"] = {
+                                        2: "Main Mode",
+                                        4: "Aggressive Mode",
+                                    }.get(exchange, f"IKEv1 exchange {exchange}")
                                 if IP in packet:
                                     source, destination = packet[IP].src, packet[IP].dst
                                 elif IPv6 in packet:

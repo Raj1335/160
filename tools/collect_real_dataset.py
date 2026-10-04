@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ COMPOSE_FILE = ROOT / "testbed" / "docker-compose.yml"
 CAPTURES_DIR = ROOT / "captures"
 MANIFEST_PATH = ROOT / "data" / "capture_manifest.jsonl"
 TRAFFIC_TYPES = ("icmp", "web", "bulk")
+PROFILES_DIR = ROOT / "testbed" / "profiles"
 SOURCE = "strongswan-docker-testbed"
 _COMPOSE_COMMAND: tuple[str, ...] | None = None
 
@@ -91,6 +93,52 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _load_profile(name: str) -> dict[str, Any]:
+    """Load and validate the metadata for a named strongSwan profile."""
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", name) is None:
+        raise ValueError(f"Invalid profile name: {name!r}")
+    profile_dir = PROFILES_DIR / name
+    metadata_path = profile_dir / "metadata.json"
+    if not metadata_path.is_file():
+        available = sorted(
+            path.name for path in PROFILES_DIR.iterdir() if path.is_dir()
+        ) if PROFILES_DIR.is_dir() else []
+        raise ValueError(
+            f"Unknown profile {name!r}. Available profiles: {', '.join(available)}"
+        )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    required = {
+        "name",
+        "ike_version",
+        "mode",
+        "auth",
+        "pfs",
+        "expected_grade",
+        "expected_findings",
+    }
+    if not isinstance(metadata, dict) or not required.issubset(metadata):
+        raise ValueError(f"Profile metadata is incomplete: {metadata_path}")
+    for endpoint in ("west.conf", "east.conf"):
+        if not (profile_dir / endpoint).is_file():
+            raise FileNotFoundError(f"Profile is missing {endpoint}: {profile_dir}")
+    if metadata["name"] != name or metadata["mode"] != "tunnel":
+        raise ValueError(f"Profile metadata does not match profile directory: {name}")
+    if not isinstance(metadata["pfs"], bool) or not isinstance(
+        metadata["expected_findings"], list
+    ):
+        raise ValueError(f"Invalid PFS or expected_findings value in {metadata_path}")
+    return metadata
+
+
+def _activate_profile(name: str) -> None:
+    """Install both endpoint configs and restart strongSwan for the profile."""
+    for service in ("west", "east"):
+        _exec(
+            service,
+            f"cp /profiles/{name}/{service}.conf /etc/ipsec.conf && ipsec restart",
+        )
+
+
 def _prepare_lab() -> None:
     _exec(
         "west",
@@ -136,11 +184,14 @@ def _generate_traffic(traffic_type: str, duration_seconds: int) -> str:
 
 
 def _capture_one(
-    traffic_type: str, run_number: int, duration_seconds: int
+    profile: str,
+    metadata: dict[str, Any],
+    traffic_type: str,
+    run_number: int,
+    duration_seconds: int,
 ) -> dict[str, Any]:
-    filename = (
-        f"tunnel_aes256cbc_pfs-on_ipv4_{traffic_type}-run{run_number:02d}.pcap"
-    )
+    pfs_state = "on" if metadata["pfs"] else "off"
+    filename = f"ipsec_{profile}_pfs-{pfs_state}_ipv4_{traffic_type}-run{run_number:02d}.pcap"
     output_path = CAPTURES_DIR / filename
     _exec(
         "west",
@@ -165,12 +216,13 @@ def _capture_one(
     ike_facts = parse_ike(str(output_path))
     flows = extract_flow_features(str(output_path), filename)
     if (
-        ike_facts["ike_version"] != "IKEv2"
+        ike_facts["ike_version"] != metadata["ike_version"]
         or ike_facts["child_sa_established"] is not True
         or flows.empty
     ):
         raise RuntimeError(
-            f"Capture validation failed for {filename}: expected an observed IKEv2 "
+            f"Capture validation failed for {filename}: expected an observed "
+            f"{metadata['ike_version']} "
             "exchange and established Child SA/ESP traffic "
             f"(IKE={ike_facts['ike_version']!r}, "
             f"Child SA={ike_facts['child_sa_established']!r}, "
@@ -184,10 +236,14 @@ def _capture_one(
         "source": SOURCE,
         "is_real_capture": True,
         "traffic_type": traffic_type,
-        "mode": "tunnel",
-        "encryption_algorithm_configured": "AES-CBC-256",
-        "integrity_algorithm_configured": "HMAC-SHA2-256-128",
-        "pfs_configured": True,
+        "profile": profile,
+        "expected_grade": metadata["expected_grade"],
+        "expected_findings": metadata["expected_findings"],
+        "ike_version": metadata["ike_version"],
+        "mode": metadata["mode"],
+        "auth": metadata["auth"],
+        "pfs": metadata["pfs"],
+        "pfs_configured": metadata["pfs"],
         "ip_version": "ipv4",
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "ike_facts": {
@@ -200,27 +256,61 @@ def _capture_one(
     }
 
 
-def collect(repetitions: int = 3, duration_seconds: int = 10) -> list[dict[str, Any]]:
+def collect(
+    repetitions: int = 3,
+    duration_seconds: int = 10,
+    profile: str | None = None,
+) -> list[dict[str, Any]]:
     if repetitions < 3:
         raise ValueError("At least 3 independent repetitions per traffic class are required.")
     if duration_seconds < 3:
         raise ValueError("The bulk traffic duration must be at least 3 seconds.")
+    profile_names = [profile] if profile else sorted(
+        path.name for path in PROFILES_DIR.iterdir() if path.is_dir()
+    )
+    if not profile_names:
+        raise ValueError(f"No testbed profiles found in {PROFILES_DIR}")
+    profile_metadata = {name: _load_profile(name) for name in profile_names}
     _compose_command()
 
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing_captures = [
+        CAPTURES_DIR
+        / (
+            f"ipsec_{profile_name}_pfs-"
+            f"{'on' if metadata['pfs'] else 'off'}_ipv4_"
+            f"{traffic_type}-run{run_number:02d}.pcap"
+        )
+        for profile_name, metadata in profile_metadata.items()
+        for traffic_type in TRAFFIC_TYPES
+        for run_number in range(1, repetitions + 1)
+    ]
+    conflicts = [path.name for path in existing_captures if path.exists()]
+    if conflicts:
+        raise FileExistsError(
+            "Refusing to overwrite existing capture(s): " + ", ".join(conflicts)
+        )
     records = []
     try:
         _run("up", "-d", "--build")
         _prepare_lab()
-        for traffic_type in TRAFFIC_TYPES:
-            for run_number in range(1, repetitions + 1):
-                record = _capture_one(traffic_type, run_number, duration_seconds)
-                records.append(record)
-                print(
-                    f"Captured {record['capture_file']} "
-                    f"({record['ike_facts']['esp_flow_count']} ESP flows)"
-                )
+        for profile_name, metadata in profile_metadata.items():
+            _activate_profile(profile_name)
+            for traffic_type in TRAFFIC_TYPES:
+                for run_number in range(1, repetitions + 1):
+                    record = _capture_one(
+                        profile_name,
+                        metadata,
+                        traffic_type,
+                        run_number,
+                        duration_seconds,
+                    )
+                    records.append(record)
+                    print(
+                        f"Captured {record['capture_file']} "
+                        f"({record['ike_facts']['esp_flow_count']} ESP flows)"
+                    )
     finally:
         _run("down", check=False)
 
@@ -246,15 +336,19 @@ def collect(repetitions: int = 3, duration_seconds: int = 10) -> list[dict[str, 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Build labeled PCAPs from real strongSwan IKEv2 tunnels. "
+            "Build labeled PCAPs from real strongSwan tunnel profiles. "
             "At least three runs per traffic class are required."
         )
     )
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--duration-seconds", type=int, default=10)
+    parser.add_argument(
+        "--profile",
+        help="Run one named profile instead of the full profile matrix",
+    )
     args = parser.parse_args()
     try:
-        records = collect(args.repetitions, args.duration_seconds)
+        records = collect(args.repetitions, args.duration_seconds, args.profile)
     except (OSError, RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
         print(f"Real-data collection failed: {exc}", file=sys.stderr)
         return 1

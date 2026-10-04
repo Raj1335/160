@@ -106,7 +106,7 @@ def test_scorer_coverage_counts_observed_and_unknown_rules_without_penalty():
     )
 
     coverage = result["coverage"]
-    assert coverage["total"] == 7
+    assert coverage["total"] == 9
     assert coverage["observed"] + coverage["not_observable"] == coverage["total"]
     assert coverage["pass"] + coverage["fail"] == coverage["observed"]
     assert coverage["not_observable"] > 0
@@ -398,3 +398,45 @@ def test_cleartext_ike_init_failure_notify_marks_sa_failed(tmp_path):
     assert facts["ike_failure_notifications"] == [
         {"type": 14, "name": "NO_PROPOSAL_CHOSEN", "packet": 1}
     ]
+
+
+@pytest.mark.parametrize(
+    ("exchange", "expected_mode"),
+    ((2, "Main Mode"), (4, "Aggressive Mode")),
+)
+def test_ikev1_exchange_mode_is_observed_and_scored(
+    tmp_path, exchange, expected_mode
+):
+    ike_header = struct.pack(
+        "!8s8sBBBBII",
+        b"initiatr",
+        b"\x00" * 8,
+        0,
+        0x10,
+        exchange,
+        0x08,
+        0,
+        28,
+    )
+    capture = tmp_path / f"ikev1_exchange_{exchange}.pcap"
+    wrpcap(
+        str(capture),
+        [
+            Ether()
+            / IP(src="192.0.2.1", dst="192.0.2.2")
+            / UDP(sport=500, dport=500)
+            / ike_header
+        ],
+    )
+
+    facts = parse_ike(str(capture))
+    result = score_capture(facts)
+
+    assert facts["ike_version"] == "IKEv1"
+    assert facts["ike_exchange_mode"] == expected_mode
+    assert any(item["id"] == "ikev1_deprecated" for item in result["findings"])
+    if exchange == 4:
+        assert result["grade"] == "F"
+        assert any(item["id"] == "ikev1_aggressive_mode" for item in result["findings"])
+    else:
+        assert result["grade"] == "D"

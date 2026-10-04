@@ -1,4 +1,20 @@
 rules:
+  - id: ikev1_deprecated
+    category: Protocol Security
+    check_field: ike_version
+    bad_values: ["IKEv1"]
+    severity: high
+    score_penalty: 40
+    message: "IKEv1 is deprecated; prefer IKEv2"
+
+  - id: ikev1_aggressive_mode
+    category: Protocol Security
+    check_field: ike_exchange_mode
+    bad_values: ["Aggressive Mode"]
+    severity: critical
+    score_penalty: 40
+    message: "IKEv1 Aggressive Mode exposes negotiation metadata and can enable offline PSK guessing"
+
   - id: encryption_des
     category: Cryptographic Strength
     check_field: encryption_algorithm

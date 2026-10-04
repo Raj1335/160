@@ -32,6 +32,7 @@ NON_FEATURE_COLUMNS = {
     "capture_file",
     "capture_sha256",
     "capture_source",
+    "profile",
     "is_real_capture",
 }
 

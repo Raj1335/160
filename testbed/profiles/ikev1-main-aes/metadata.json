@@ -1,0 +1,9 @@
+{
+  "name": "ikev1-main-aes",
+  "ike_version": "IKEv1",
+  "mode": "tunnel",
+  "auth": "PSK",
+  "pfs": true,
+  "expected_grade": "D",
+  "expected_findings": ["ikev1_deprecated"]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "ikev1-aggressive-weak",
+  "ike_version": "IKEv1",
+  "mode": "tunnel",
+  "auth": "PSK",
+  "pfs": true,
+  "expected_grade": "F",
+  "expected_findings": ["ikev1_deprecated", "ikev1_aggressive_mode"]
+}

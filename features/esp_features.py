@@ -34,6 +34,7 @@ FEATURE_COLUMNS = [
     "capture_file",
     "capture_sha256",
     "capture_source",
+    "profile",
     "is_real_capture",
 ]
 
@@ -251,6 +252,7 @@ def build_feature_dataset(captures_dir: Path, output_path: Path) -> pd.DataFrame
         if verified_real:
             frame["label"] = entry["traffic_type"].strip()
             frame["capture_source"] = entry["source"].strip()
+            frame["profile"] = entry.get("profile")
             frame["is_real_capture"] = True
         frames.append(frame)
     dataset = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FEATURE_COLUMNS)
