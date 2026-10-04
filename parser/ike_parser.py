@@ -14,23 +14,24 @@ from scapy.all import IP, IPv6, UDP, PcapReader
 ROOT = Path(__file__).resolve().parents[1]
 
 _ENCRYPTION = {
+    2: "DES",
     3: "3DES",
+    11: "NULL",
     12: "AES-CBC",
     18: "AES-GCM-8",
     19: "AES-GCM-12",
     20: "AES-GCM",
     1: "DES-CBC",
-    11: "3DES",
     0: "NONE",
 }
 _INTEGRITY = {
-    1: "HMAC-MD5",
-    2: "HMAC-SHA1",
-    5: "HMAC-SHA2-256",
-    6: "HMAC-SHA2-384",
-    7: "HMAC-SHA2-512",
-    12: "AES-XCBC-MAC-96",
-    13: "AES-CMAC-96",
+    1: "HMAC-MD5-96",
+    2: "HMAC-SHA1-96",
+    5: "AES-XCBC-MAC-96",
+    8: "AES-CMAC-96",
+    12: "HMAC-SHA2-256-128",
+    13: "HMAC-SHA2-384-192",
+    14: "HMAC-SHA2-512-256",
 }
 _PRF = {
     1: "PRF-HMAC-MD5",
@@ -164,6 +165,7 @@ def _empty_facts() -> dict[str, Any]:
         "initiator_ip": None,
         "responder_ip": None,
         "ike_sa_established": None,
+        "ike_failure_notifications": [],
         "child_sa_established": None,
         "spi_initiator": None,
         "spi_responder": None,
@@ -187,6 +189,7 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
     offered_sa: dict[str, Any] | None = None
     first_ike_endpoints: tuple[str, str] | None = None
     esp_spi_by_source: dict[str, int] = {}
+    failure_notify_names = {14: "NO_PROPOSAL_CHOSEN", 17: "INVALID_KE_PAYLOAD"}
 
     try:
         with PcapReader(str(path)) as reader:
@@ -235,6 +238,22 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
                                     try:
                                         payloads = _ike_payloads(payload[:message_length], payload[16])
                                         for payload_type, body in payloads:
+                                            if payload_type == 41 and exchange == 34 and is_response:
+                                                if len(body) < 4:
+                                                    raise ValueError("truncated IKE notify payload")
+                                                spi_size = body[1]
+                                                if len(body) < 4 + spi_size:
+                                                    raise ValueError("truncated IKE notify SPI")
+                                                notify_type = struct.unpack_from("!H", body, 2)[0]
+                                                notify_name = failure_notify_names.get(notify_type)
+                                                if notify_name is not None:
+                                                    facts["ike_failure_notifications"].append(
+                                                        {
+                                                            "type": notify_type,
+                                                            "name": notify_name,
+                                                            "packet": packet_index,
+                                                        }
+                                                    )
                                             if payload_type != 33:
                                                 continue
                                             transforms = _sa_transforms(body)
@@ -287,6 +306,9 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
         facts["parse_warnings"].append(
             "IKE_AUTH completion alone cannot confirm authentication success because its payload is encrypted; establishment remains unknown without observed ESP traffic."
         )
+
+    if facts["ike_failure_notifications"]:
+        facts["ike_sa_established"] = False
     if first_ike_endpoints:
         initiator = first_ike_endpoints[0]
         facts["spi_initiator"] = (

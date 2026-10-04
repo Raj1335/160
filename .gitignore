@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-real-validation/
+ipsec-real-validation-results.tar.gz
 venv/
 captures/*.pcap
 captures/*.pcapng

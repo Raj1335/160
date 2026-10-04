@@ -48,8 +48,8 @@ def test_pipeline_on_synthetic_pcap(tmp_path, monkeypatch):
     assert "not yet validated" in training["note"]
 
     score = score_capture(facts)
-    assert 0 <= score["risk_score"] <= 100
-    assert any(finding["id"] == "long_sa_lifetime" for finding in score["findings"])
+    assert score["security_score"] == 100
+    assert not any(finding["id"] == "long_sa_lifetime" for finding in score["findings"])
 
     result = pipeline.analyze(str(capture))
     assert {
@@ -83,6 +83,20 @@ def test_scorer_applies_hard_cap_for_weak_encryption():
     )
     assert result["risk_score"] == 20
     assert result["findings"][0]["id"] == "weak_encryption"
+
+
+def test_unknown_sa_lifetime_is_not_scored_as_a_finding():
+    result = score_capture({"sa_lifetime_seconds": None})
+
+    assert result["security_score"] == 100
+    assert not any(finding["id"] == "long_sa_lifetime" for finding in result["findings"])
+
+
+def test_observed_sa_lifetime_over_24_hours_is_scored():
+    result = score_capture({"sa_lifetime_seconds": 86401})
+
+    assert result["security_score"] == 95
+    assert any(finding["id"] == "long_sa_lifetime" for finding in result["findings"])
 
 
 def test_classifier_handles_missing_training_csv(tmp_path):
@@ -290,3 +304,71 @@ def test_nat_traversal_ike_is_not_mistaken_for_esp(tmp_path):
     features = extract_flow_features(str(capture), capture.name)
     assert facts["ike_version"] == "IKEv2"
     assert features.empty
+
+
+def test_incomplete_ike_auth_exchange_remains_unknown(tmp_path):
+    spi_i = b"initiatr"
+    spi_r = b"responder"
+    encrypted_body = b"\x00" * 16
+    encrypted_payload = struct.pack("!BBH", 0, 0, 4 + len(encrypted_body)) + encrypted_body
+    ike_auth = struct.pack(
+        "!8s8sBBBBII",
+        spi_i,
+        spi_r,
+        46,
+        0x20,
+        35,
+        0x08,
+        1,
+        28 + len(encrypted_payload),
+    ) + encrypted_payload
+    capture = tmp_path / "incomplete_ike_auth.pcap"
+    wrpcap(
+        str(capture),
+        [
+            Ether()
+            / IP(src="192.0.2.1", dst="192.0.2.2")
+            / UDP(sport=500, dport=500)
+            / ike_auth
+        ],
+    )
+
+    facts = parse_ike(str(capture))
+
+    assert facts["ike_sa_established"] is None
+    assert facts["ike_failure_notifications"] == []
+
+
+def test_cleartext_ike_init_failure_notify_marks_sa_failed(tmp_path):
+    spi_i = b"initiatr"
+    spi_r = b"\x00" * 8
+    notify_body = struct.pack("!BBH", 0, 0, 14)
+    notify_payload = struct.pack("!BBH", 0, 0, 4 + len(notify_body)) + notify_body
+    ike_init_response = struct.pack(
+        "!8s8sBBBBII",
+        spi_i,
+        spi_r,
+        41,
+        0x20,
+        34,
+        0x20,
+        0,
+        28 + len(notify_payload),
+    ) + notify_payload
+    capture = tmp_path / "ike_init_no_proposal.pcap"
+    wrpcap(
+        str(capture),
+        [
+            Ether()
+            / IP(src="192.0.2.2", dst="192.0.2.1")
+            / UDP(sport=500, dport=500)
+            / ike_init_response
+        ],
+    )
+
+    facts = parse_ike(str(capture))
+
+    assert facts["ike_sa_established"] is False
+    assert facts["ike_failure_notifications"] == [
+        {"type": 14, "name": "NO_PROPOSAL_CHOSEN", "packet": 1}
+    ]

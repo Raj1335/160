@@ -26,11 +26,48 @@ CAPTURES_DIR = ROOT / "captures"
 MANIFEST_PATH = ROOT / "data" / "capture_manifest.jsonl"
 TRAFFIC_TYPES = ("icmp", "web", "bulk")
 SOURCE = "strongswan-docker-testbed"
+_COMPOSE_COMMAND: tuple[str, ...] | None = None
+
+
+def _compose_command() -> tuple[str, ...]:
+    """Resolve Docker Compose v2 or the standalone docker-compose command."""
+    global _COMPOSE_COMMAND
+    if _COMPOSE_COMMAND is not None:
+        return _COMPOSE_COMMAND
+
+    docker = shutil.which("docker")
+    if docker is not None:
+        result = subprocess.run(
+            [docker, "compose", "version"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            _COMPOSE_COMMAND = (docker, "compose")
+            return _COMPOSE_COMMAND
+
+    standalone = shutil.which("docker-compose")
+    if standalone is not None:
+        result = subprocess.run(
+            [standalone, "version"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            _COMPOSE_COMMAND = (standalone,)
+            return _COMPOSE_COMMAND
+
+    raise RuntimeError(
+        "Docker Compose was not found. Install the Docker Compose v2 plugin "
+        "or the standalone docker-compose command."
+    )
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE_FILE), *args],
+        [*_compose_command(), "-f", str(COMPOSE_FILE), *args],
         check=False,
         text=True,
         capture_output=True,
@@ -102,7 +139,7 @@ def _capture_one(
     traffic_type: str, run_number: int, duration_seconds: int
 ) -> dict[str, Any]:
     filename = (
-        f"tunnel_aesgcm256_pfs-on_ipv4_{traffic_type}-run{run_number:02d}.pcap"
+        f"tunnel_aes256cbc_pfs-on_ipv4_{traffic_type}-run{run_number:02d}.pcap"
     )
     output_path = CAPTURES_DIR / filename
     _exec(
@@ -148,7 +185,8 @@ def _capture_one(
         "is_real_capture": True,
         "traffic_type": traffic_type,
         "mode": "tunnel",
-        "encryption_algorithm_configured": "AES-GCM-256",
+        "encryption_algorithm_configured": "AES-CBC-256",
+        "integrity_algorithm_configured": "HMAC-SHA2-256-128",
         "pfs_configured": True,
         "ip_version": "ipv4",
         "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -167,19 +205,7 @@ def collect(repetitions: int = 3, duration_seconds: int = 10) -> list[dict[str, 
         raise ValueError("At least 3 independent repetitions per traffic class are required.")
     if duration_seconds < 3:
         raise ValueError("The bulk traffic duration must be at least 3 seconds.")
-    if shutil.which("docker") is None:
-        raise RuntimeError(
-            "Docker was not found. Install Docker Desktop with Linux containers "
-            "enabled, then rerun this command."
-        )
-    version = subprocess.run(
-        ["docker", "compose", "version"],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    if version.returncode:
-        raise RuntimeError("Docker Compose v2 is required: " + version.stderr.strip())
+    _compose_command()
 
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)

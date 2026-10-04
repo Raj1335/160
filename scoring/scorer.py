@@ -39,11 +39,7 @@ def score_capture(
             raise ValueError("Every scoring rule needs string id and check_field")
         value = ike_facts.get(field)
         is_triggered = False
-        if rule_id == "long_sa_lifetime":
-            is_triggered = value is None or (
-                isinstance(value, (int, float)) and value > 86400
-            )
-        elif value is not None:
+        if value is not None:
             bad_values = rule.get("bad_values") or []
             is_triggered = any(
                 value == bad
@@ -54,6 +50,15 @@ def score_capture(
                 )
                 for bad in bad_values
             )
+            threshold = rule.get("gt")
+            if threshold is not None:
+                if not isinstance(threshold, (int, float)):
+                    raise ValueError(f"Invalid gt threshold in scoring rule {rule_id}")
+                is_triggered = is_triggered or (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and value > threshold
+                )
         if not is_triggered:
             continue
         penalty = rule.get("score_penalty")
@@ -82,4 +87,10 @@ def score_capture(
         }
         for finding in findings
     ]
-    return {"risk_score": score, "findings": findings, "threat_matrix": threat_matrix}
+    security_score = score
+    return {
+        "security_score": security_score,
+        "risk_score": security_score,
+        "findings": findings,
+        "threat_matrix": threat_matrix,
+    }

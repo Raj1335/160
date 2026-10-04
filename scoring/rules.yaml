@@ -50,7 +50,7 @@ rules:
   - id: long_sa_lifetime
     category: Session Management
     check_field: sa_lifetime_seconds
-    bad_values: null
+    gt: 86400
     severity: low
     score_penalty: 5
-    message: "SA lifetime excessively long or undeclared — increases exposure window if key compromised"
+    message: "Observed SA lifetime exceeds 24 hours — increases the exposure window if a key is compromised"
