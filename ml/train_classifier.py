@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -11,9 +12,10 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 from sklearn.model_selection import (
     StratifiedGroupKFold,
     cross_val_predict,
@@ -23,6 +25,7 @@ from sklearn.model_selection import (
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "ml" / "model.pkl"
+MODEL_SHA256_PATH = MODEL_PATH.with_suffix(MODEL_PATH.suffix + ".sha256")
 NON_FEATURE_COLUMNS = {
     "label",
     "spi",
@@ -45,8 +48,10 @@ def _insufficient_result(n_samples: int, n_classes: int) -> dict[str, Any]:
         "cv_accuracy_mean": None,
         "cv_accuracy_std": None,
         "baseline_majority_accuracy": None,
+        "leave_one_profile_out": None,
         "feature_importances": None,
         "confusion_matrix": None,
+        "per_class": None,
         "note": (
             f"Only {n_samples} labeled flows available across {n_classes} traffic-type "
             "classes — too few for a statistically meaningful train/test split. "
@@ -60,6 +65,26 @@ def _insufficient_result(n_samples: int, n_classes: int) -> dict[str, Any]:
 def _remove_unvalidated_model() -> None:
     if MODEL_PATH.is_file():
         MODEL_PATH.unlink()
+    if MODEL_SHA256_PATH.is_file():
+        MODEL_SHA256_PATH.unlink()
+
+
+def _load_model_bundle() -> dict[str, Any]:
+    """Load only a model matching its digest and the installed scikit-learn."""
+    if not MODEL_PATH.is_file() or not MODEL_SHA256_PATH.is_file():
+        raise ValueError("Classifier model or its SHA-256 sidecar is missing.")
+    expected_digest = MODEL_SHA256_PATH.read_text(encoding="ascii").strip()
+    actual_digest = hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest()
+    if expected_digest != actual_digest:
+        raise ValueError("Classifier model SHA-256 verification failed.")
+    bundle = joblib.load(MODEL_PATH)
+    trained_version = bundle.get("sklearn_version")
+    if trained_version != sklearn.__version__:
+        raise ValueError(
+            f"Classifier model uses scikit-learn {trained_version}; "
+            f"installed version is {sklearn.__version__}."
+        )
+    return bundle
 
 
 def _unverified_result(n_samples: int) -> dict[str, Any]:
@@ -222,6 +247,45 @@ def train_and_evaluate(csv_path: str = "./data/flow_features.csv") -> dict[str, 
     baseline_scores = cross_val_score(
         baseline, features, labels, cv=splitter, groups=groups, n_jobs=1
     )
+    profile_evaluation = None
+    if "profile" in frame.columns:
+        profiles = frame["profile"].fillna("").astype(str).str.strip()
+        unique_profiles = sorted(profile for profile in profiles.unique() if profile)
+        if len(unique_profiles) >= 2:
+            per_profile = {}
+            for held_out_profile in unique_profiles:
+                held_out = profiles.eq(held_out_profile)
+                train_indices = np.flatnonzero(~held_out.to_numpy())
+                test_indices = np.flatnonzero(held_out.to_numpy())
+                profile_model = RandomForestClassifier(
+                    n_estimators=200,
+                    class_weight="balanced",
+                    random_state=42,
+                    n_jobs=-1,
+                )
+                profile_model.fit(features.iloc[train_indices], labels.iloc[train_indices])
+                profile_predictions = profile_model.predict(features.iloc[test_indices])
+                per_profile[held_out_profile] = {
+                    "accuracy": float(
+                        accuracy_score(labels.iloc[test_indices], profile_predictions)
+                    ),
+                    "n_test_samples": int(len(test_indices)),
+                    "test_classes": sorted(
+                        labels.iloc[test_indices].astype(str).unique().tolist()
+                    ),
+                    "train_classes": sorted(
+                        labels.iloc[train_indices].astype(str).unique().tolist()
+                    ),
+                }
+            profile_evaluation = {
+                "mean_accuracy": float(
+                    np.mean(
+                        [result["accuracy"] for result in per_profile.values()]
+                    )
+                ),
+                "n_profiles": len(per_profile),
+                "per_profile": per_profile,
+            }
     model.fit(features, labels)
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     out_of_fold_by_capture: dict[str, dict[str, Any]] = {}
@@ -249,24 +313,45 @@ def train_and_evaluate(csv_path: str = "./data/flow_features.csv") -> dict[str, 
             "feature_columns": feature_columns,
             "out_of_fold_by_capture": out_of_fold_by_capture,
             "capture_hashes": capture_hashes,
+            "sklearn_version": sklearn.__version__,
         },
         MODEL_PATH,
     )
+    model_digest = hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest()
+    MODEL_SHA256_PATH.write_text(model_digest + "\n", encoding="ascii")
 
     matrix = confusion_matrix(labels, predictions, labels=model.classes_).tolist()
+    precision, recall, f1, support = precision_recall_fscore_support(
+        labels, predictions, labels=model.classes_, zero_division=0
+    )
     provenance_note = "Training data was assembled from manifest-registered real captures."
     return {
         "status": "trained",
         "n_samples": n_samples,
         "n_classes": n_classes,
+        "n_captures": int(groups.nunique()),
+        "sklearn_version": sklearn.__version__,
+        "model_sha256": model_digest,
         "cv_accuracy_mean": float(fold_scores.mean()),
         "cv_accuracy_std": float(fold_scores.std()),
         "baseline_majority_accuracy": float(baseline_scores.mean()),
+        "leave_one_profile_out": profile_evaluation,
         "feature_importances": {
             name: float(value)
             for name, value in zip(feature_columns, model.feature_importances_)
         },
         "confusion_matrix": matrix,
+        "per_class": {
+            str(label): {
+                "precision": float(class_precision),
+                "recall": float(class_recall),
+                "f1": float(class_f1),
+                "support": int(class_support),
+            }
+            for label, class_precision, class_recall, class_f1, class_support in zip(
+                model.classes_, precision, recall, f1, support
+            )
+        },
         "note": (
             f"Evaluated with {folds}-fold "
             f"{'capture-grouped ' if groups is not None else ''}"
@@ -284,7 +369,7 @@ def predict_traffic_type(flow_features_row: dict[str, Any]) -> dict[str, Any]:
             "confidence": None,
             "note": "Classifier not yet trained — insufficient labeled data.",
         }
-    bundle = joblib.load(MODEL_PATH)
+    bundle = _load_model_bundle()
     capture_id = flow_features_row.get("capture_id")
     expected_hash = bundle.get("capture_hashes", {}).get(capture_id)
     if capture_id in bundle.get("capture_hashes", {}) and (

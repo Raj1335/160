@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import sklearn
 
 from features.esp_features import (
     FEATURE_COLUMNS,
@@ -149,12 +150,16 @@ def test_classifier_rejects_unverified_training_csv(tmp_path, monkeypatch):
     ]
     pd.DataFrame(rows).to_csv(training_csv, index=False)
     monkeypatch.setattr(classifier, "MODEL_PATH", tmp_path / "model.pkl")
+    monkeypatch.setattr(
+        classifier, "MODEL_SHA256_PATH", tmp_path / "model.pkl.sha256"
+    )
 
     result = train_and_evaluate(str(training_csv))
     assert result["status"] == "insufficient_data"
     assert result["n_samples"] == 0
     assert "Rejected 10 row(s)" in result["note"]
     assert not (tmp_path / "model.pkl").exists()
+    assert not (tmp_path / "model.pkl.sha256").exists()
 
 
 def test_feature_extractor_returns_stable_empty_frame(tmp_path):
@@ -269,6 +274,9 @@ def test_classifier_excludes_unverified_captures(tmp_path, monkeypatch):
             )
     pd.DataFrame(rows).to_csv(training_csv, index=False)
     monkeypatch.setattr(classifier, "MODEL_PATH", tmp_path / "model.pkl")
+    monkeypatch.setattr(
+        classifier, "MODEL_SHA256_PATH", tmp_path / "model.pkl.sha256"
+    )
 
     result = train_and_evaluate(str(training_csv))
 
@@ -320,6 +328,7 @@ def test_capture_grouped_classifier_predicts_held_out_captures(tmp_path, monkeyp
                             f"{label}-{capture_number}".encode()
                         ).hexdigest(),
                         "capture_source": "strongswan-docker-testbed",
+                        "profile": f"profile-{capture_number}",
                         "is_real_capture": True,
                     }
                 )
@@ -342,15 +351,43 @@ def test_capture_grouped_classifier_predicts_held_out_captures(tmp_path, monkeyp
         encoding="utf-8",
     )
     monkeypatch.setattr(classifier, "MODEL_PATH", tmp_path / "model.pkl")
+    monkeypatch.setattr(
+        classifier, "MODEL_SHA256_PATH", tmp_path / "model.pkl.sha256"
+    )
 
     result = train_and_evaluate(str(training_csv))
     prediction = predict_traffic_type(rows[0])
 
     assert result["status"] == "trained"
+    assert result["n_captures"] == 9
+    assert result["sklearn_version"] == sklearn.__version__
+    assert result["model_sha256"] == hashlib.sha256(
+        (tmp_path / "model.pkl").read_bytes()
+    ).hexdigest()
+    assert (
+        tmp_path / "model.pkl.sha256"
+    ).read_text(encoding="ascii").strip() == result["model_sha256"]
+    with monkeypatch.context() as version_patch:
+        version_patch.setattr(classifier.sklearn, "__version__", "0.0")
+        with pytest.raises(ValueError, match="uses scikit-learn"):
+            predict_traffic_type(rows[0])
     assert "capture-grouped" in result["note"]
+    assert result["leave_one_profile_out"]["n_profiles"] == 3
+    assert 0 <= result["leave_one_profile_out"]["mean_accuracy"] <= 1
+    assert set(result["per_class"]) == {"bulk", "icmp", "web"}
+    assert all(
+        0 <= metrics["recall"] <= 1 and metrics["support"] > 0
+        for metrics in result["per_class"].values()
+    )
+    assert "profile" in classifier.NON_FEATURE_COLUMNS
     assert prediction["predicted_label"] in {"bulk", "icmp", "web"}
     assert 0 <= prediction["confidence"] <= 1
     assert "held out" in prediction["note"]
+    (tmp_path / "model.pkl").write_bytes(
+        (tmp_path / "model.pkl").read_bytes() + b"tampered"
+    )
+    with pytest.raises(ValueError, match="SHA-256 verification failed"):
+        predict_traffic_type(rows[0])
 
 
 def test_nat_traversal_ike_is_not_mistaken_for_esp(tmp_path):

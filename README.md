@@ -18,6 +18,8 @@ encrypted facts stay unknown.
    two directions of one tunnel cannot leak across training and test folds.
    Captures being predicted are reported with their held-out (out-of-fold)
    prediction, not an in-sample score.
+   Training is an explicit offline action (`python -m ml.train_classifier`);
+   analyzing a capture never retrains or changes the model.
 5. Applies YAML-based rules and writes JSON findings and a combined HTML report.
 6. Presents the same pipeline in a local or hosted Streamlit app.
 
@@ -34,6 +36,8 @@ manifest record with the SHA-256 of the bundled PCAP and a sidecar documenting
 the configured testbed values; those sidecar values are explicitly identified
 as configuration metadata, not as values decoded from encrypted payloads.
 Analyze one with `python pipeline.py captures/fixtures/<capture>.pcap`.
+The bundled three captures do not satisfy the independent-capture minimum for
+training; no trained model or accuracy claim is shipped.
 
 ## Run locally (Windows PowerShell)
 
