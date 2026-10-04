@@ -221,26 +221,45 @@ ruff check .
 python -m pytest -q --cov
 ```
 
-## Deploy the web app for free on Render
+## Deploy the web app for free
 
-The included [`render.yaml`](./render.yaml) defines a free Render web service.
-In Render, create a **New Blueprint Instance** from this repository and deploy
-the `sih26160-ipsec-analyzer` service. The service binds Streamlit to Render's
-`$PORT` and exposes Streamlit's health endpoint. For manual setup, use:
+The browser UI is a Streamlit frontend backed by the Python analysis pipeline.
+For this Streamlit project, **Streamlit Community Cloud** is the recommended
+free first deployment:
 
-- Build command: `pip install -r requirements.txt`
-- Start command:
-  `streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true`
-- Health check path: `/_stcore/health`
+1. Open [share.streamlit.io](https://share.streamlit.io) and sign in with
+   GitHub.
+2. Select **Create app → Yup, I have an app**.
+3. Choose repository `Raj1335/160`, branch `main`, and main file path
+   `dashboard/app.py`.
+4. In **Advanced settings**, choose Python 3.11, then deploy.
+5. Open the app URL once the build finishes, choose the bundled
+   `ipsec_medium-cbc-tunnel-ikev2_pfs-on_ipv4_icmp-run01.pcap`, and click
+   **Analyze capture** to confirm reports download.
 
-Render's free web instances can sleep when idle and have an ephemeral
-filesystem. The hosted app can analyze uploaded PCAPs, but uploaded data,
-generated reports, and models trained at runtime are not durable across
-restarts/redeploys. For a hosted, pre-trained classifier, collect and evaluate
-the real dataset locally, then deploy only data/model artifacts you are
-authorized to publish; do not commit confidential network captures. Durable
-multi-user datasets require persistent storage or an external object store,
-which is intentionally not assumed or required for local operation.
+Streamlit Cloud reads the pinned dependencies from the repository's root
+`requirements.txt`. The first screen defers analysis and heavy pipeline imports
+until the judge clicks the button; the bundled testbed fixtures are available
+without uploading a file. See the [deployment and demo checklist](./docs/DEPLOYMENT.md)
+for a final pre-event warm-up/check routine.
+
+**Free hosting cannot guarantee an always-warm instance or a zero cold start.**
+Streamlit documents that [Community Cloud apps without traffic for 12 hours go
+to sleep](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app#developer-view);
+a visitor can wake one from its sleeping page. Builds usually take a few
+minutes, and shared-host limits can change. Deploy and test the public URL ahead
+of time, then open it and run the demo shortly before judging. If judges must
+always get an instant response after long inactivity, no free shared-host
+option can reliably promise that; use a paid always-on instance or bring a
+locally hosted demo as a fallback.
+
+The included [`render.yaml`](./render.yaml) is an alternative free Render
+deployment, not the preferred judge-day host: Render documents that its free
+web services spin down after 15 minutes without inbound traffic and usually
+need about a minute to spin up on the next request. Either free host has an
+ephemeral filesystem. Uploads, generated reports, and runtime-trained models
+are temporary; do not store confidential captures or rely on runtime training.
+The repository intentionally ships no trained model.
 
 ## Limitations
 

@@ -7,14 +7,19 @@ import json
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
-from features.esp_features import build_feature_dataset
-from ml.train_classifier import train_and_evaluate
-from pipeline import ROOT, analyze
-
+ROOT = Path(__file__).resolve().parents[1]
 CAPTURES_DIR = ROOT / "captures"
+
+
+def _available_captures() -> list[Path]:
+    captures = set(CAPTURES_DIR.glob("*.pcap"))
+    captures.update((CAPTURES_DIR / "fixtures").glob("*.pcap"))
+    return sorted(
+        captures,
+        key=lambda path: ("icmp" not in path.name.casefold(), path.name.casefold()),
+    )
 
 
 def _show_results(result: dict) -> None:
@@ -75,6 +80,9 @@ def _training_data_status() -> None:
     )
     if st.sidebar.button("Rebuild dataset and train model"):
         with st.spinner("Rebuilding verified features and evaluating the classifier..."):
+            from features.esp_features import build_feature_dataset
+            from ml.train_classifier import train_and_evaluate
+
             build_feature_dataset(CAPTURES_DIR, ROOT / "data" / "flow_features.csv")
             training = train_and_evaluate(
                 str(ROOT / "data" / "flow_features.csv")
@@ -93,6 +101,8 @@ def _training_data_status() -> None:
     if not features_path.is_file():
         st.sidebar.info("Training features have not been built yet.")
         return
+    import pandas as pd
+
     dataset = pd.read_csv(features_path)
     if "is_real_capture" not in dataset:
         st.sidebar.info("No verified real-capture provenance is available yet.")
@@ -114,24 +124,31 @@ def main() -> None:
     )
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     _training_data_status()
-    captures = sorted(CAPTURES_DIR.glob("*.pcap"))
-    source = st.radio("Capture source", ("Existing capture", "Upload a PCAP"), horizontal=True)
+    captures = _available_captures()
+    source = st.radio(
+        "Capture source",
+        ("Choose a capture", "Upload a PCAP"),
+        horizontal=True,
+    )
     selected_path = None
     uploaded_file = None
-    if source == "Existing capture":
+    if source == "Choose a capture":
         if captures:
             selected_path = st.selectbox(
                 "Choose a capture", captures, format_func=lambda path: path.name
             )
         else:
             st.info(
-                "No captures are present. Upload a real PCAP, or generate a synthetic "
-                "development fixture with `python tools/generate_demo_capture.py`."
+                "No bundled or local captures are present. Upload a PCAP to analyze it."
             )
     else:
         uploaded_file = st.file_uploader("Upload a .pcap file", type=["pcap", "pcapng"])
 
-    should_analyze = selected_path is not None if source == "Existing capture" else uploaded_file is not None
+    should_analyze = (
+        selected_path is not None
+        if source == "Choose a capture"
+        else uploaded_file is not None
+    )
     if should_analyze:
         uploaded_content = None
         if selected_path is not None:
@@ -147,9 +164,16 @@ def main() -> None:
             uploaded_content = uploaded_file.getvalue()
             content_digest = hashlib.sha256(uploaded_content).hexdigest()
             cache_key = f"upload:{uploaded_file.name}:{content_digest}"
-        if st.session_state.get("analysis_key") != cache_key:
+        if (
+            st.session_state.get("analysis_key") == cache_key
+            and st.session_state.get("analysis_result")
+        ):
+            _show_results(st.session_state["analysis_result"])
+        elif st.button("Analyze capture", type="primary"):
             try:
                 with st.spinner("Analyzing capture..."):
+                    from pipeline import analyze
+
                     if selected_path is not None:
                         result = analyze(str(selected_path))
                     else:
@@ -163,12 +187,10 @@ def main() -> None:
                             result = analyze(str(temporary_capture))
                 st.session_state["analysis_result"] = result
                 st.session_state["analysis_key"] = cache_key
+                _show_results(result)
             except (OSError, ValueError, KeyError) as exc:
                 st.error(f"Capture analysis failed: {exc}")
                 st.stop()
-        result = st.session_state.get("analysis_result")
-        if result:
-            _show_results(result)
 
 
 if __name__ == "__main__":
