@@ -216,9 +216,9 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
                             exchange = payload[18]
                             message_id = struct.unpack_from("!I", payload, 20)[0]
                             message_length = struct.unpack_from("!I", payload, 24)[0]
-                            if version >> 4 in (1, 2) and 28 <= message_length <= len(payload):
+                            if version >> 4 in (1, 2) and message_length >= 28:
                                 facts["ike_version"] = f"IKEv{version >> 4}"
-                                if version >> 4 == 1:
+                                if version >> 4 == 1 and message_length <= len(payload):
                                     facts["ike_exchange_mode"] = {
                                         2: "Main Mode",
                                         4: "Aggressive Mode",
@@ -238,11 +238,17 @@ def parse_ike(pcap_path: str) -> dict[str, Any]:
                                         else (destination, source)
                                     )
                                     facts["initiator_ip"], facts["responder_ip"] = first_ike_endpoints
-                                if exchange == 35:
+                                if message_length <= len(payload) and exchange == 35:
                                     auth_messages.setdefault(message_id, set()).add(is_response)
-                                if version >> 4 == 2 and exchange in (34, 36):
+                                if (
+                                    message_length <= len(payload)
+                                    and version >> 4 == 2
+                                    and exchange in (34, 36)
+                                ):
                                     try:
-                                        payloads = _ike_payloads(payload[:message_length], payload[16])
+                                        payloads = _ike_payloads(
+                                            payload[:message_length], payload[16]
+                                        )
                                         for payload_type, body in payloads:
                                             if payload_type == 41 and exchange == 34 and is_response:
                                                 if len(body) < 4:

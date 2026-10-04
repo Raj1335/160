@@ -400,6 +400,35 @@ def test_cleartext_ike_init_failure_notify_marks_sa_failed(tmp_path):
     ]
 
 
+def test_truncated_ike_packet_does_not_create_false_exchange_facts(tmp_path):
+    ike_header = struct.pack(
+        "!8s8sBBBBII",
+        b"initiatr",
+        b"\x00" * 8,
+        33,
+        0x20,
+        34,
+        0x08,
+        0,
+        160,
+    )
+    capture = tmp_path / "truncated_ike.pcap"
+    wrpcap(
+        str(capture),
+        [
+            Ether()
+            / IP(src="192.0.2.1", dst="192.0.2.2")
+            / UDP(sport=500, dport=500)
+            / ike_header
+        ],
+    )
+
+    facts = parse_ike(str(capture))
+
+    assert facts["ike_exchange_mode"] is None
+    assert facts["child_sa_established"] is None
+
+
 @pytest.mark.parametrize(
     ("exchange", "expected_mode"),
     ((2, "Main Mode"), (4, "Aggressive Mode")),

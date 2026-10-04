@@ -191,7 +191,10 @@ def _capture_one(
     duration_seconds: int,
 ) -> dict[str, Any]:
     pfs_state = "on" if metadata["pfs"] else "off"
-    filename = f"ipsec_{profile}_pfs-{pfs_state}_ipv4_{traffic_type}-run{run_number:02d}.pcap"
+    filename = (
+        f"ipsec_{profile}_pfs-{pfs_state}_ipv4_"
+        f"{traffic_type}-run{run_number:02d}.pcap"
+    )
     output_path = CAPTURES_DIR / filename
     _exec(
         "west",
@@ -265,9 +268,12 @@ def collect(
         raise ValueError("At least 3 independent repetitions per traffic class are required.")
     if duration_seconds < 3:
         raise ValueError("The bulk traffic duration must be at least 3 seconds.")
-    profile_names = [profile] if profile else sorted(
-        path.name for path in PROFILES_DIR.iterdir() if path.is_dir()
-    )
+    if profile:
+        profile_names = [profile]
+    else:
+        profile_names = sorted(
+            path.name for path in PROFILES_DIR.iterdir() if path.is_dir()
+        )
     if not profile_names:
         raise ValueError(f"No testbed profiles found in {PROFILES_DIR}")
     profile_metadata = {name: _load_profile(name) for name in profile_names}
