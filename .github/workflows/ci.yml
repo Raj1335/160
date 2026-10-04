@@ -24,6 +24,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libcairo2 libgdk-pixbuf-2.0-0 libffi-dev libpango-1.0-0 shared-mime-info
+      - name: Check shell syntax
+        run: bash -n tools/run_kali_real_validation.sh
       - name: Lint
         run: ruff check .
       - name: Test
