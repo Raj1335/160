@@ -135,13 +135,10 @@ Docker. It defaults to three captures per traffic class and refuses to
 overwrite captures from a previous run. Optional arguments set repetitions
 (minimum 3) and bulk-transfer duration in seconds (minimum 3).
 
-An earlier local Kali run recorded nine baseline IKEv2 captures and an
-18-flow, three-fold capture-grouped evaluation. This small single-profile
-dataset is not bundled and cannot support leave-one-profile-out evaluation or
-generalization claims. The committed fixtures are three captures (one per
-traffic class), so they are explicitly insufficient to train a validated
-model. Add more independently captured runs and profiles before making an
-accuracy claim. Never register synthetic or unlabeled captures as real.
+The committed fixtures are three captures (one per traffic class), so they are
+explicitly insufficient to train a validated model. Add more independently
+captured runs and profiles before making an accuracy claim. Never register
+synthetic or unlabeled captures as real.
 
 For an independently sourced, licensed real IKEv2/ESP capture, register it
 explicitly with a verified class label and a provenance citation:
